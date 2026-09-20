@@ -18,7 +18,6 @@ if uploaded_file is not None:
         api_url="https://serverless.roboflow.com",
         api_key="Rhe3HdHgQKYFx7aatoOx"  # Keep your actual API key here
     )
-    client.configure(InferenceConfiguration(api_key_transport="header"))
     result = client.infer("temp_input.jpg", model_id="hard-hat-detector-l0uba/4")
 
     # Draw bounding boxes
