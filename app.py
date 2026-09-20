@@ -6,13 +6,16 @@ import streamlit as st
 
 st.title("👷 Hard Hat Detection App")
 
-uploaded_file = st.file_uploader(
-    "Upload an Image", type=["jpg", "jpeg", "png"]
-)
+# Allow live camera capture or file upload
+camera_file = st.camera_input("Take a live photo")
+uploaded_file = st.file_uploader("Or upload an image file", type=["jpg", "jpeg", "png"])
 
-if uploaded_file is not None:
-    # Load uploaded image
-    image = Image.open(uploaded_file)
+# Select whichever image source is active
+selected_file = camera_file if camera_file is not None else uploaded_file
+
+if selected_file is not None:
+    # Load image
+    image = Image.open(selected_file)
 
     # Run Roboflow model
     client = InferenceHTTPClient(
@@ -61,6 +64,9 @@ if uploaded_file is not None:
             font_thickness,
         )
 
+    # Display result
+    st.image(img_np, caption="Detections", use_container_width=True)
+    st.success(f"Found {len(predictions)} objects!")
     # Display result
     st.image(img_np, caption="Detections", use_container_width=True)
     st.success(f"Found {len(predictions)} objects!")
