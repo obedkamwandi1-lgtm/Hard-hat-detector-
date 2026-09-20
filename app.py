@@ -6,6 +6,18 @@ import streamlit as st
 
 st.title("👷 Hard Hat Detection App")
 
+# Class color dictionary in BGR format (Blue, Green, Red)
+CLASS_COLORS = {
+    "WEARING HARD-HAT": (0, 255, 0),      # Green
+    "NO HARD-HAT": (0, 0, 255),           # Red
+    "wearing hard-hat": (0, 255, 0),
+    "no hard-hat": (0, 0, 255),
+    "helmet": (0, 255, 0),
+    "no-helmet": (0, 0, 255),
+    "vest": (0, 255, 255),                # Yellow
+    "no-vest": (0, 165, 255),             # Orange
+}
+
 # Allow live camera capture or file upload
 camera_file = st.camera_input("Take a live photo")
 uploaded_file = st.file_uploader("Or upload an image file", type=["jpg", "jpeg", "png"])
@@ -41,17 +53,21 @@ if selected_file is not None:
         x1, y1 = int(x - w / 2), int(y - h / 2)
         x2, y2 = int(x + w / 2), int(y + h / 2)
 
-        # Draw bounding box
-        cv2.rectangle(img_np, (x1, y1), (x2, y2), (0, 255, 0), box_thickness)
+        # Get class name and matching color (defaults to Cyan if unknown class)
+        cls_name = pred["class"]
+        box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
+
+        # Draw bounding box with class-specific color
+        cv2.rectangle(img_np, (x1, y1), (x2, y2), box_color, box_thickness)
 
         # Format label text
-        label = f"{pred['class']} ({pred['confidence']:.2f})"
+        label = f"{cls_name} ({pred['confidence']:.2f})"
 
-        # Draw filled background badge for text
+        # Draw filled background badge using the class color
         (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
         bg_y1 = max(0, y1 - text_h - 10)
         bg_y2 = max(text_h + 10, y1)
-        cv2.rectangle(img_np, (x1, bg_y1), (x1 + text_w + 10, bg_y2), (0, 255, 0), -1)
+        cv2.rectangle(img_np, (x1, bg_y1), (x1 + text_w + 10, bg_y2), box_color, -1)
 
         # Draw text inside the badge
         cv2.putText(
@@ -65,6 +81,6 @@ if selected_file is not None:
         )
 
     # Display result
-  # Display result
-st.image(img_np, caption="Detections", use_container_width=True)
+    st.image(img_np, caption="Detections", use_container_width=True)
+    st.success(f"Found {len(predictions)} objects!")
 st.success(f"Found {len(predictions)} objects!")
