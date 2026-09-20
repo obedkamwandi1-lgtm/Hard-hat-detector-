@@ -10,7 +10,7 @@ st.set_page_config(page_title="Hard Hat & Safety Detector", page_icon="👷", la
 
 st.title("👷 Site Safety & Hard Hat Detector")
 
-# Class color mapping (BGR format)
+# Class color mapping (BGR format for OpenCV)
 CLASS_COLORS = {
     "WEARING HARD-HAT": (0, 255, 0),      # Green
     "NO HARD-HAT": (0, 0, 255),           # Red
@@ -31,37 +31,30 @@ uploaded_file = st.file_uploader("Or upload an image file", type=["jpg", "jpeg",
 selected_file = camera_file if camera_file is not None else uploaded_file
 
 if selected_file is not None:
+    # Load image
     image = Image.open(selected_file)
 
+    # Initialize Roboflow Client
     client = InferenceHTTPClient(
         api_url="https://detect.roboflow.com",
         api_key="Rhe3HdHgQKYFx7aatoOx"
     )
 
-    # Execute workflow
-    workflow_response = client.run_workflow(
-        workspace_name="chinyama-chilila",
-        workflow_id="custom-workflow-10",
-        images={"image": image}
-    )
+    # Directly run model inference on the image
+    result = client.infer(image, model_id="hard-hat-detector-l0uba/4")
 
-    # Parse predictions
-    predictions = []
-    if isinstance(workflow_response, list) and len(workflow_response) > 0:
-        res_dict = workflow_response[0]
-        preds = res_dict.get("predictions", [])
-        if isinstance(preds, dict) and "predictions" in preds:
-            predictions = preds["predictions"]
-        elif isinstance(preds, list):
-            predictions = preds
+    # Extract predictions list
+    predictions = result.get("predictions", [])
 
     img_np = np.array(image)
     img_h, img_w = img_np.shape[:2]
 
+    # Dynamic styling sizes based on image resolution
     box_thickness = max(2, int(img_w / 400))
     font_scale = max(0.6, img_w / 800)
     font_thickness = max(2, int(img_w / 500))
 
+    # Filter predictions based on slider confidence threshold
     filtered_predictions = [p for p in predictions if isinstance(p, dict) and p.get("confidence", 0) >= conf_threshold]
 
     class_counts = {}
@@ -87,14 +80,17 @@ if selected_file is not None:
             "Bounding Box": f"[{x1}, {y1}, {x2}, {y2}]"
         })
 
+        # Draw bounding box
         cv2.rectangle(img_np, (x1, y1), (x2, y2), box_color, box_thickness)
         label = f"{cls_name} ({pred['confidence']:.2f})"
 
+        # Draw text background badge
         (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
         bg_y1 = max(0, y1 - text_h - 10)
         bg_y2 = max(text_h + 10, y1)
         cv2.rectangle(img_np, (x1, bg_y1), (x1 + text_w + 10, bg_y2), box_color, -1)
 
+        # Draw text inside badge
         cv2.putText(
             img_np,
             label,
@@ -105,15 +101,16 @@ if selected_file is not None:
             font_thickness,
         )
 
-    # Show safety alert banner
+    # Display real-time safety alert banner
     if violations > 0:
         st.error(f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s) without a hard hat!")
     elif len(filtered_predictions) > 0:
         st.success("✅ **ALL COMPLIANT:** All detected personnel are wearing hard hats.")
 
+    # Display image with bounding boxes
     st.image(img_np, caption="Processed Image", use_container_width=True)
 
-    # Safety Metrics Summary
+    # Display Safety Analytics Dashboard
     st.markdown("### 📊 Safety Analytics Summary")
     total_detected = len(filtered_predictions)
     
@@ -124,13 +121,13 @@ if selected_file is not None:
         m2.metric("Safety Violations", violations, delta_color="inverse")
         m3.metric("Compliance Rate", f"{compliance_rate:.1f}%")
 
-        # Table audit
+        # Table audit log
         st.markdown("### 📋 Detection Logs")
         st.dataframe(pd.DataFrame(table_data), use_container_width=True)
     else:
         st.info("No detections found above the selected confidence threshold.")
 
-    # Download button
+    # Prepare download button
     result_img = Image.fromarray(img_np)
     buf = io.BytesIO()
     result_img.save(buf, format="PNG")
