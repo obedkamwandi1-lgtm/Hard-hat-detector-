@@ -1,4 +1,5 @@
 import cv2
+import io
 import numpy as np
 from PIL import Image
 from inference_sdk import InferenceHTTPClient
@@ -82,5 +83,20 @@ if selected_file is not None:
 
     # Display result
     st.image(img_np, caption="Detections", use_container_width=True)
+    st.success(f"Found {len(predictions)} objects!")
+
+    # Prepare downloadable image
+    result_img = Image.fromarray(img_np)
+    buf = io.BytesIO()
+    result_img.save(buf, format="PNG")
+    byte_im = buf.getvalue()
+
+    # Add download button
+    st.download_button(
+        label="📥 Download Labeled Image",
+        data=byte_im,
+        file_name="detection_result.png",
+        mime="image/png",
+    )
     st.success(f"Found {len(predictions)} objects!")
 st.success(f"Found {len(predictions)} objects!")
