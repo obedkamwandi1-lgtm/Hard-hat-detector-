@@ -63,4 +63,4 @@ if uploaded_file is not None:
 
     # Display result
     st.image(img_np, caption="Detections", use_container_width=True)
-    st.success(f"Found {len(predictions)} objects!")ns)} objects!")
+    st.success(f"Found {len(predictions)} objects!")
