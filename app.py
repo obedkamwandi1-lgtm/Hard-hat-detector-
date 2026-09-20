@@ -14,11 +14,13 @@ if uploaded_file is not None:
     image.save("temp_input.jpg")
 
     # Run Roboflow model
+  # Run Roboflow model
     client = InferenceHTTPClient(
-        api_url="https://serverless.roboflow.com",
-        api_key="Rhe3HdHgQKYFx7aatoOx"  # Keep your actual API key here
+        api_url="https://detect.roboflow.com",
+        api_key="Rhe3HdHgQKYFx7aatoOx"
     )
-    result = client.infer("temp_input.jpg", model_id="hard-hat-detector-l0uba/4")
+
+    result = client.infer(image, model_id="hard-hat-detector-l0uba/4")
 
     # Draw bounding boxes
     img_np = np.array(image)
