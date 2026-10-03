@@ -46,7 +46,7 @@ def play_offline_siren():
 CLASS_COLORS = {
     "WEARING HARD-HAT": (0, 255, 0),      # Green
     "NO HARD-HAT": (255, 0, 0),           # Red
-    "NOT WEARING HARD-HAT": (255, 0, 0),  # Added to correctly map the model's exact text
+    "NOT WEARING HARD-HAT": (255, 0, 0),  
     "not wearing hard-hat": (255, 0, 0),
     "wearing hard-hat": (0, 255, 0),
     "no hard-hat": (255, 0, 0),
@@ -91,12 +91,39 @@ if selected_file is not None:
     font_scale = max(0.3, img_w / 1500)
     font_thickness = max(1, int(img_w / 1000))
 
-    # Filter predictions based on slider confidence threshold
-    filtered_predictions = [p for p in predictions if isinstance(p, dict) and p.get("confidence", 0) >= conf_threshold]
+    # 1. Filter initial predictions based on slider confidence threshold
+    initial_predictions = [p for p in predictions if isinstance(p, dict) and p.get("confidence", 0) >= conf_threshold]
+
+    # 2. Apply Non-Maximum Suppression (NMS) to remove overlapping double-detections
+    boxes_for_nms = []
+    scores_for_nms = []
+    
+    for p in initial_predictions:
+        # Convert Roboflow center x,y coordinates to OpenCV top-left x,y for NMS
+        x, y, w, h = p["x"], p["y"], p["width"], p["height"]
+        boxes_for_nms.append([int(x - w / 2), int(y - h / 2), int(w), int(h)])
+        scores_for_nms.append(float(p["confidence"]))
+
+    # 0.4 is the overlap threshold (If two boxes overlap by 40%+, delete the weaker one)
+    indices = cv2.dnn.NMSBoxes(boxes_for_nms, scores_for_nms, conf_threshold, 0.4)
+    
+    # Create the final list of clean predictions
+    filtered_predictions = [initial_predictions[i] for i in np.array(indices).flatten()] if len(indices) > 0 else []
 
     class_counts = {}
     violations = 0
     table_data = []
+
+    # Create shorter display labels to reduce visual clutter
+    short_labels = {
+        "WEARING HARD-HAT": "SAFE",
+        "NOT WEARING HARD-HAT": "NO HAT",
+        "wearing hard-hat": "SAFE",
+        "no hard-hat": "NO HAT",
+        "NO HARD-HAT": "NO HAT",
+        "helmet": "SAFE",
+        "no-helmet": "NO HAT"
+    }
 
     for idx, pred in enumerate(filtered_predictions):
         x, y, w, h = int(pred["x"]), int(pred["y"]), int(pred["width"]), int(pred["height"])
@@ -119,18 +146,20 @@ if selected_file is not None:
             "Bounding Box": f"[{x1}, {y1}, {x2}, {y2}]"
         })
         
+        display_name = short_labels.get(cls_name, cls_name)
+        label = f"{display_name} ({pred['confidence']:.2f})"
+        
         # Draw bounding box for each individual worker
         cv2.rectangle(img_np, (x1, y1), (x2, y2), box_color, box_thickness)
-        label = f"{cls_name} ({pred['confidence']:.2f})"
         
-        # Draw text background badge
+        # Draw tighter text background badge
         (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
-        bg_y1 = max(0, y1 - text_h - 10)
-        bg_y2 = max(text_h + 10, y1)
-        cv2.rectangle(img_np, (x1, bg_y1), (x1 + text_w + 10, bg_y2), box_color, -1)
+        bg_y1 = max(0, y1 - text_h - 6) # Reduced padding
+        bg_y2 = y1 # Snapped exactly to the top of the bounding box
+        cv2.rectangle(img_np, (x1, bg_y1), (x1 + text_w + 4, bg_y2), box_color, -1)
         
-        # Draw text inside badge
-        cv2.putText(img_np, label, (x1 + 5, bg_y2 - 5), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), font_thickness)
+        # Draw text inside badge with tighter margins
+        cv2.putText(img_np, label, (x1 + 2, bg_y2 - 2), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), font_thickness)
 
     # Real-time safety alert banner + Automatic Email Dispatch
     if violations > 0:
