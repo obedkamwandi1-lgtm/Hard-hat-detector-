@@ -8,7 +8,6 @@ import streamlit as st
 import smtplib
 from email.mime.text import MIMEText
 import streamlit.components.v1 as components
-import qrcode
 
 st.set_page_config(page_title="Hard Hat & Safety Detector", page_icon="👷", layout="wide")
 st.title("👷 Site Safety & Hard Hat Detector")
@@ -56,21 +55,15 @@ CLASS_COLORS = {
 }
 
 # Sidebar controls
-st.sidebar.header("⚙️️ Detection Settings")
+st.sidebar.header("⚙️ Detection Settings")
 conf_threshold = st.sidebar.slider("Confidence Threshold", min_value=0.1, max_value=1.0, value=0.4, step=0.05)
 
-# Generate QR Code in Sidebar
+# Generate QR Code in Sidebar using an API (No installation required!)
 st.sidebar.markdown("---")
 st.sidebar.header("📱 Scan to Mobile")
-app_url = "https://your-hard-hat-app-url.streamlit.app" 
-
-qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
-qr.add_data(app_url)
-qr.make(fit=True)
-qr_img = qr.make_image(fill_color="black", back_color="white")
-qr_buf = io.BytesIO()
-qr_img.save(qr_buf, format="PNG")
-st.sidebar.image(qr_buf, caption="Scan to open on mobile")
+app_url = "https://your-hard-hat-app-url.streamlit.app" # Replace with your real app link when ready
+qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=160x160&data={app_url}"
+st.sidebar.image(qr_api_url, caption="Scan to open on mobile")
 
 # Input methods
 camera_file = st.camera_input("Take a live photo")
