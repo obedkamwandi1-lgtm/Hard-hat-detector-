@@ -45,7 +45,9 @@ def play_offline_siren():
 # Class color mapping (RGB format since Streamlit renders NumPy arrays in RGB)
 CLASS_COLORS = {
     "WEARING HARD-HAT": (0, 255, 0),      # Green
-    "NO HARD-HAT": (255, 0, 0),           # Red (Fixed from Blue)
+    "NO HARD-HAT": (255, 0, 0),           # Red
+    "NOT WEARING HARD-HAT": (255, 0, 0),  # Added to correctly map the model's exact text
+    "not wearing hard-hat": (255, 0, 0),
     "wearing hard-hat": (0, 255, 0),
     "no hard-hat": (255, 0, 0),
     "helmet": (0, 255, 0),
@@ -84,10 +86,10 @@ if selected_file is not None:
     img_np = np.array(image)
     img_h, img_w = img_np.shape[:2]
 
-    # Dynamic styling sizes based on image resolution
-    box_thickness = max(2, int(img_w / 400))
-    font_scale = max(0.6, img_w / 800)
-    font_thickness = max(2, int(img_w / 500))
+    # Dynamic styling sizes (Scaled down to prevent overlap on group photos)
+    box_thickness = max(1, int(img_w / 600))
+    font_scale = max(0.3, img_w / 1500)
+    font_thickness = max(1, int(img_w / 1000))
 
     # Filter predictions based on slider confidence threshold
     filtered_predictions = [p for p in predictions if isinstance(p, dict) and p.get("confidence", 0) >= conf_threshold]
