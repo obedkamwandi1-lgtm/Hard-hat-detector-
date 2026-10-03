@@ -56,13 +56,12 @@ CLASS_COLORS = {
 }
 
 # Sidebar controls
-st.sidebar.header("⚙️ Detection Settings")
+st.sidebar.header("⚙️️ Detection Settings")
 conf_threshold = st.sidebar.slider("Confidence Threshold", min_value=0.1, max_value=1.0, value=0.4, step=0.05)
 
 # Generate QR Code in Sidebar
 st.sidebar.markdown("---")
 st.sidebar.header("📱 Scan to Mobile")
-# UPDATE THIS STRING to your actual live Streamlit URL when deployed
 app_url = "https://your-hard-hat-app-url.streamlit.app" 
 
 qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
@@ -114,15 +113,12 @@ if selected_file is not None:
     scores_for_nms = []
     
     for p in initial_predictions:
-        # Convert Roboflow center x,y coordinates to OpenCV top-left x,y for NMS
         x, y, w, h = p["x"], p["y"], p["width"], p["height"]
         boxes_for_nms.append([int(x - w / 2), int(y - h / 2), int(w), int(h)])
         scores_for_nms.append(float(p["confidence"]))
 
-    # 0.4 is the overlap threshold (If two boxes overlap by 40%+, delete the weaker one)
     indices = cv2.dnn.NMSBoxes(boxes_for_nms, scores_for_nms, conf_threshold, 0.4)
     
-    # Create the final list of clean predictions
     filtered_predictions = [initial_predictions[i] for i in np.array(indices).flatten()] if len(indices) > 0 else []
 
     class_counts = {}
@@ -135,10 +131,9 @@ if selected_file is not None:
         x2, y2 = int(x + w / 2), int(y + h / 2)
         
         cls_name = pred["class"]
-        box_color = CLASS_COLORS.get(cls_name, (255, 255, 0)) # Default to yellow if class is unlisted
+        box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
         class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
         
-        # Check if the class name contains "no" or "not" to correctly trigger violations
         cls_lower = cls_name.lower()
         if "no" in cls_lower or "not" in cls_lower:
             violations += 1
@@ -150,35 +145,27 @@ if selected_file is not None:
             "Bounding Box": f"[{x1}, {y1}, {x2}, {y2}]"
         })
         
-        # Use the exact class name from Roboflow for the label
         label = f"{cls_name} ({pred['confidence']:.2f})"
         
-        # Draw bounding box for each individual worker
         cv2.rectangle(img_np, (x1, y1), (x2, y2), box_color, box_thickness)
         
-        # Draw tighter text background badge
         (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
-        bg_y1 = max(0, y1 - text_h - 6) # Reduced padding
-        bg_y2 = y1 # Snapped exactly to the top of the bounding box
+        bg_y1 = max(0, y1 - text_h - 6)
+        bg_y2 = y1
         cv2.rectangle(img_np, (x1, bg_y1), (x1 + text_w + 4, bg_y2), box_color, -1)
         
-        # Draw text inside badge with tighter margins
         cv2.putText(img_np, label, (x1 + 2, bg_y2 - 2), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), font_thickness)
 
-    # Real-time safety alert banner + Automatic Email Dispatch
     if violations > 0:
         st.error(f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s) without a hard hat!")
         play_offline_siren()
         
-        # Check session state to prevent duplicate emails for the same detection
         if "last_alert_sent" not in st.session_state or st.session_state["last_alert_sent"] != violations:
             try:
-                # Retrieve credentials from Streamlit Secrets
                 sender = st.secrets["email"]["sender"]
                 password = st.secrets["email"]["password"]
                 receiver = st.secrets["email"]["receiver"]
                 
-                # Compose the email message
                 msg = MIMEText(
                     f"🚨 AUTOMATED SITE SAFETY ALERT\n\n"
                     f"The vision monitoring system detected {violations} person(s) without required safety helmets on site.\n\n"
@@ -188,7 +175,6 @@ if selected_file is not None:
                 msg['From'] = sender
                 msg['To'] = receiver
                 
-                # Send email via Gmail's SSL server
                 with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
                     server.login(sender, password)
                     server.send_message(msg)
@@ -202,10 +188,8 @@ if selected_file is not None:
         st.success("✅ **ALL COMPLIANT:** All detected personnel are wearing hard hats.")
         st.session_state["last_alert_sent"] = 0
 
-    # Display image with bounding boxes
     st.image(img_np, caption="Processed Image", use_container_width=True)
 
-    # Display Safety Analytics Dashboard
     st.markdown("### 📊 Safety Analytics Summary")
     total_detected = len(filtered_predictions)
     
@@ -216,92 +200,11 @@ if selected_file is not None:
         m2.metric("Safety Violations", violations, delta_color="inverse")
         m3.metric("Compliance Rate", f"{compliance_rate:.1f}%")
         
-        # Table audit log
         st.markdown("### 📋 Detection Logs")
         st.dataframe(pd.DataFrame(table_data), use_container_width=True)
     else:
         st.info("No detections found above the selected confidence threshold.")
 
-    # Prepare download button
-    result_img = Image.fromarray(img_np)
-    buf = io.BytesIO()
-    result_img.save(buf, format="PNG")
-    byte_im = buf.getvalue()
-    
-    st.download_button(
-        label="📥 Download Labeled Image",
-        data=byte_im,
-        file_name="safety_audit_result.png",
-        mime="image/png"
-    ickness)
-        
-        # Draw tighter text background badge
-        (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
-        bg_y1 = max(0, y1 - text_h - 6) # Reduced padding
-        bg_y2 = y1 # Snapped exactly to the top of the bounding box
-        cv2.rectangle(img_np, (x1, bg_y1), (x1 + text_w + 4, bg_y2), box_color, -1)
-        
-        # Draw text inside badge with tighter margins
-        cv2.putText(img_np, label, (x1 + 2, bg_y2 - 2), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), font_thickness)
-
-    # Real-time safety alert banner + Automatic Email Dispatch
-    if violations > 0:
-        st.error(f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s) without a hard hat!")
-        play_offline_siren()
-        
-        # Check session state to prevent duplicate emails for the same detection
-        if "last_alert_sent" not in st.session_state or st.session_state["last_alert_sent"] != violations:
-            try:
-                # Retrieve credentials from Streamlit Secrets
-                sender = st.secrets["email"]["sender"]
-                password = st.secrets["email"]["password"]
-                receiver = st.secrets["email"]["receiver"]
-                
-                # Compose the email message
-                msg = MIMEText(
-                    f"🚨 AUTOMATED SITE SAFETY ALERT\n\n"
-                    f"The vision monitoring system detected {violations} person(s) without required safety helmets on site.\n\n"
-                    f"Please log in to your dashboard to review the capture."
-                )
-                msg['Subject'] = '🚨 Urgent: Safety Violation Detected'
-                msg['From'] = sender
-                msg['To'] = receiver
-                
-                # Send email via Gmail's SSL server
-                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-                    server.login(sender, password)
-                    server.send_message(msg)
-                
-                st.success("✉️ **Automated Alert Sent:** Notification email dispatched to site manager.")
-                st.session_state["last_alert_sent"] = violations
-            except Exception as e:
-                st.error(f"Failed to send email alert. Check Streamlit Secrets. Error: {e}")
-                
-    elif len(filtered_predictions) > 0:
-        st.success("✅ **ALL COMPLIANT:** All detected personnel are wearing hard hats.")
-        st.session_state["last_alert_sent"] = 0
-
-    # Display image with bounding boxes
-    st.image(img_np, caption="Processed Image", use_container_width=True)
-
-    # Display Safety Analytics Dashboard
-    st.markdown("### 📊 Safety Analytics Summary")
-    total_detected = len(filtered_predictions)
-    
-    if total_detected > 0:
-        compliance_rate = ((total_detected - violations) / total_detected) * 100
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total Personnel", total_detected)
-        m2.metric("Safety Violations", violations, delta_color="inverse")
-        m3.metric("Compliance Rate", f"{compliance_rate:.1f}%")
-        
-        # Table audit log
-        st.markdown("### 📋 Detection Logs")
-        st.dataframe(pd.DataFrame(table_data), use_container_width=True)
-    else:
-        st.info("No detections found above the selected confidence threshold.")
-
-    # Prepare download button
     result_img = Image.fromarray(img_np)
     buf = io.BytesIO()
     result_img.save(buf, format="PNG")
