@@ -4,12 +4,12 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 from inference_sdk import InferenceHTTPClient
-import streamlit as st 
+import streamlit as st
 import smtplib
 from email.mime.text import MIMEText
 import streamlit.components.v1 as components
-st.set_page_config(page_title="Hard Hat & Safety Detector", page_icon="👷", layout="wide")
 
+st.set_page_config(page_title="Hard Hat & Safety Detector", page_icon="👷", layout="wide")
 st.title("👷 Site Safety & Hard Hat Detector")
 
 def play_offline_siren():
@@ -22,21 +22,16 @@ def play_offline_siren():
             const ctx = new AudioCtx();
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
-            
             osc.type = 'sawtooth';
             const now = ctx.currentTime;
-            
             osc.frequency.setValueAtTime(880, now);
             osc.frequency.setValueAtTime(440, now + 0.25);
             osc.frequency.setValueAtTime(880, now + 0.50);
             osc.frequency.setValueAtTime(440, now + 0.75);
-            
             gain.gain.setValueAtTime(0.5, now);
             gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
-            
             osc.connect(gain);
             gain.connect(ctx.destination);
-            
             osc.start(now);
             osc.stop(now + 1.0);
         } catch (e) {
@@ -46,14 +41,15 @@ def play_offline_siren():
     </script>
     """
     components.html(siren_js, height=0, width=0)
-# Class color mapping (BGR format for OpenCV)
+
+# Class color mapping (RGB format since Streamlit renders NumPy arrays in RGB)
 CLASS_COLORS = {
     "WEARING HARD-HAT": (0, 255, 0),      # Green
-    "NO HARD-HAT": (0, 0, 255),           # Red
+    "NO HARD-HAT": (255, 0, 0),           # Red (Fixed from Blue)
     "wearing hard-hat": (0, 255, 0),
-    "no hard-hat": (0, 0, 255),
+    "no hard-hat": (255, 0, 0),
     "helmet": (0, 255, 0),
-    "no-helmet": (0, 0, 255),
+    "no-helmet": (255, 0, 0),
 }
 
 # Sidebar controls
@@ -76,12 +72,15 @@ if selected_file is not None:
         api_key="Rhe3HdHgQKYFx7aatoOx"
     )
 
-    # Directly run model inference on the image
-    result = client.infer(image, model_id="hard-hat-detector-l0uba/4")
+    try:
+        # Directly run model inference on the image
+        result = client.infer(image, model_id="hard-hat-detector-l0uba/4")
+    except Exception as e:
+        st.error(f"Error connecting to Roboflow API. Please check your internet or API key. Details: {e}")
+        st.stop()
 
     # Extract predictions list
     predictions = result.get("predictions", [])
-
     img_np = np.array(image)
     img_h, img_w = img_np.shape[:2]
 
@@ -101,46 +100,37 @@ if selected_file is not None:
         x, y, w, h = int(pred["x"]), int(pred["y"]), int(pred["width"]), int(pred["height"])
         x1, y1 = int(x - w / 2), int(y - h / 2)
         x2, y2 = int(x + w / 2), int(y + h / 2)
-
+        
         cls_name = pred["class"]
-        box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
-        cls_name = pred["class"]
-    box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
-    class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
-    
-    # Check if the class name contains "no" or "not" to correctly trigger violations
-    cls_lower = cls_name.lower()
-    if "no" in cls_lower or "not" in cls_lower:
-        violations += 1
+        box_color = CLASS_COLORS.get(cls_name, (255, 255, 0)) # Default to yellow if class is unlisted
+        class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
+        
+        # Check if the class name contains "no" or "not" to correctly trigger violations
+        cls_lower = cls_name.lower()
+        if "no" in cls_lower or "not" in cls_lower:
+            violations += 1
+            
         table_data.append({
-            "ID": idx + 1,
-            "Class": cls_name,
-            "Confidence": f"{pred['confidence'] * 100:.1f}%",
+            "ID": idx + 1, 
+            "Class": cls_name, 
+            "Confidence": f"{pred['confidence'] * 100:.1f}%", 
             "Bounding Box": f"[{x1}, {y1}, {x2}, {y2}]"
         })
-
-        # Draw bounding box
+        
+        # Draw bounding box for each individual worker
         cv2.rectangle(img_np, (x1, y1), (x2, y2), box_color, box_thickness)
         label = f"{cls_name} ({pred['confidence']:.2f})"
-
+        
         # Draw text background badge
         (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
         bg_y1 = max(0, y1 - text_h - 10)
         bg_y2 = max(text_h + 10, y1)
         cv2.rectangle(img_np, (x1, bg_y1), (x1 + text_w + 10, bg_y2), box_color, -1)
-
+        
         # Draw text inside badge
-        cv2.putText(
-            img_np,
-            label,
-            (x1 + 5, bg_y2 - 5),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale,
-            (0, 0, 0),
-            font_thickness,
-        )
+        cv2.putText(img_np, label, (x1 + 5, bg_y2 - 5), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), font_thickness)
 
-# Real-time safety alert banner + Automatic Email Dispatch
+    # Real-time safety alert banner + Automatic Email Dispatch
     if violations > 0:
         st.error(f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s) without a hard hat!")
         play_offline_siren()
@@ -152,7 +142,7 @@ if selected_file is not None:
                 sender = st.secrets["email"]["sender"]
                 password = st.secrets["email"]["password"]
                 receiver = st.secrets["email"]["receiver"]
-
+                
                 # Compose the email message
                 msg = MIMEText(
                     f"🚨 AUTOMATED SITE SAFETY ALERT\n\n"
@@ -162,23 +152,19 @@ if selected_file is not None:
                 msg['Subject'] = '🚨 Urgent: Safety Violation Detected'
                 msg['From'] = sender
                 msg['To'] = receiver
-
+                
                 # Send email via Gmail's SSL server
                 with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
                     server.login(sender, password)
                     server.send_message(msg)
-
+                
                 st.success("✉️ **Automated Alert Sent:** Notification email dispatched to site manager.")
-                
-                # Remember that an email was sent for this count
                 st.session_state["last_alert_sent"] = violations
-                
             except Exception as e:
                 st.error(f"Failed to send email alert. Check Streamlit Secrets. Error: {e}")
-
+                
     elif len(filtered_predictions) > 0:
         st.success("✅ **ALL COMPLIANT:** All detected personnel are wearing hard hats.")
-        # Reset tracker when a compliant image is uploaded
         st.session_state["last_alert_sent"] = 0
 
     # Display image with bounding boxes
@@ -194,7 +180,7 @@ if selected_file is not None:
         m1.metric("Total Personnel", total_detected)
         m2.metric("Safety Violations", violations, delta_color="inverse")
         m3.metric("Compliance Rate", f"{compliance_rate:.1f}%")
-
+        
         # Table audit log
         st.markdown("### 📋 Detection Logs")
         st.dataframe(pd.DataFrame(table_data), use_container_width=True)
@@ -206,10 +192,10 @@ if selected_file is not None:
     buf = io.BytesIO()
     result_img.save(buf, format="PNG")
     byte_im = buf.getvalue()
-
+    
     st.download_button(
         label="📥 Download Labeled Image",
         data=byte_im,
         file_name="safety_audit_result.png",
-        mime="image/png",
+        mime="image/png"
     )
