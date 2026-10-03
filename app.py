@@ -114,17 +114,6 @@ if selected_file is not None:
     violations = 0
     table_data = []
 
-    # Create shorter display labels to reduce visual clutter
-    short_labels = {
-        "WEARING HARD-HAT": "SAFE",
-        "NOT WEARING HARD-HAT": "NO HAT",
-        "wearing hard-hat": "SAFE",
-        "no hard-hat": "NO HAT",
-        "NO HARD-HAT": "NO HAT",
-        "helmet": "SAFE",
-        "no-helmet": "NO HAT"
-    }
-
     for idx, pred in enumerate(filtered_predictions):
         x, y, w, h = int(pred["x"]), int(pred["y"]), int(pred["width"]), int(pred["height"])
         x1, y1 = int(x - w / 2), int(y - h / 2)
@@ -146,8 +135,8 @@ if selected_file is not None:
             "Bounding Box": f"[{x1}, {y1}, {x2}, {y2}]"
         })
         
-        display_name = short_labels.get(cls_name, cls_name)
-        label = f"{display_name} ({pred['confidence']:.2f})"
+        # Use the exact class name from Roboflow for the label
+        label = f"{cls_name} ({pred['confidence']:.2f})"
         
         # Draw bounding box for each individual worker
         cv2.rectangle(img_np, (x1, y1), (x2, y2), box_color, box_thickness)
