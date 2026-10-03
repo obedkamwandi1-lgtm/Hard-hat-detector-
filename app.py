@@ -4,7 +4,9 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 from inference_sdk import InferenceHTTPClient
-import streamlit as st
+import streamlit as st 
+import smtplib
+from email.mime.text import MIMEText
 
 st.set_page_config(page_title="Hard Hat & Safety Detector", page_icon="👷", layout="wide")
 
@@ -101,11 +103,45 @@ if selected_file is not None:
             font_thickness,
         )
 
-    # Display real-time safety alert banner
+# Real-time safety alert banner + Automatic Email Dispatch
     if violations > 0:
         st.error(f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s) without a hard hat!")
+        
+        # Check session state to prevent duplicate emails for the same detection
+        if "last_alert_sent" not in st.session_state or st.session_state["last_alert_sent"] != violations:
+            try:
+                # Retrieve credentials from Streamlit Secrets
+                sender = st.secrets["email"]["sender"]
+                password = st.secrets["email"]["password"]
+                receiver = st.secrets["email"]["receiver"]
+
+                # Compose the email message
+                msg = MIMEText(
+                    f"🚨 AUTOMATED SITE SAFETY ALERT\n\n"
+                    f"The vision monitoring system detected {violations} person(s) without required safety helmets on site.\n\n"
+                    f"Please log in to your dashboard to review the capture."
+                )
+                msg['Subject'] = '🚨 Urgent: Safety Violation Detected'
+                msg['From'] = sender
+                msg['To'] = receiver
+
+                # Send email via Gmail's SSL server
+                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                    server.login(sender, password)
+                    server.send_message(msg)
+
+                st.success("✉️ **Automated Alert Sent:** Notification email dispatched to site manager.")
+                
+                # Remember that an email was sent for this count
+                st.session_state["last_alert_sent"] = violations
+                
+            except Exception as e:
+                st.error(f"Failed to send email alert. Check Streamlit Secrets. Error: {e}")
+
     elif len(filtered_predictions) > 0:
         st.success("✅ **ALL COMPLIANT:** All detected personnel are wearing hard hats.")
+        # Reset tracker when a compliant image is uploaded
+        st.session_state["last_alert_sent"] = 0
 
     # Display image with bounding boxes
     st.image(img_np, caption="Processed Image", use_container_width=True)
