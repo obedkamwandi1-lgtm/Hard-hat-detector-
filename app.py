@@ -104,7 +104,7 @@ if selected_file is not None:
 
         cls_name = pred["class"]
         box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
-       cls_name = pred["class"]
+        cls_name = pred["class"]
     box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
     class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
     
