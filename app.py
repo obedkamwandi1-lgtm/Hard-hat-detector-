@@ -233,7 +233,7 @@ if selected_file is not None:
         data=byte_im,
         file_name="safety_audit_result.png",
         mime="image/png"
-    )ickness)
+    ickness)
         
         # Draw tighter text background badge
         (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
