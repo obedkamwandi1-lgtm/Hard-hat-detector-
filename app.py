@@ -106,9 +106,9 @@ if selected_file is not None:
         box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
         class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
 
-     cls_lower = cls_name.lower()
-    if "no hard-hat" in cls_lower or "no-helmet" in cls_lower or "no hard hat" in cls_lower:
-        violations += 1
+        cls_lower = cls_name.lower()
+        if "no hard-hat" in cls_lower or "no-helmet" in cls_lower or "no hard hat" in cls_lower:
+            violations += 1
         table_data.append({
             "ID": idx + 1,
             "Class": cls_name,
