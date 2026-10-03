@@ -104,11 +104,14 @@ if selected_file is not None:
 
         cls_name = pred["class"]
         box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
-        class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
-
-        cls_lower = cls_name.lower()
-        if "no hard-hat" in cls_lower or "no-helmet" in cls_lower or "no hard hat" in cls_lower:
-            violations += 1
+       cls_name = pred["class"]
+    box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
+    class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
+    
+    # Check if the class name contains "no" or "not" to correctly trigger violations
+    cls_lower = cls_name.lower()
+    if "no" in cls_lower or "not" in cls_lower:
+        violations += 1
         table_data.append({
             "ID": idx + 1,
             "Class": cls_name,
