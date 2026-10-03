@@ -7,11 +7,45 @@ from inference_sdk import InferenceHTTPClient
 import streamlit as st 
 import smtplib
 from email.mime.text import MIMEText
-
+import streamlit.components.v1 as components
 st.set_page_config(page_title="Hard Hat & Safety Detector", page_icon="👷", layout="wide")
 
 st.title("👷 Site Safety & Hard Hat Detector")
 
+def play_offline_siren():
+    siren_js = """
+    <script>
+    (function() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            
+            osc.type = 'sawtooth';
+            const now = ctx.currentTime;
+            
+            osc.frequency.setValueAtTime(880, now);
+            osc.frequency.setValueAtTime(440, now + 0.25);
+            osc.frequency.setValueAtTime(880, now + 0.50);
+            osc.frequency.setValueAtTime(440, now + 0.75);
+            
+            gain.gain.setValueAtTime(0.5, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            osc.start(now);
+            osc.stop(now + 1.0);
+        } catch (e) {
+            console.log("Audio playback blocked or unsupported:", e);
+        }
+    })();
+    </script>
+    """
+    components.html(siren_js, height=0, width=0)
 # Class color mapping (BGR format for OpenCV)
 CLASS_COLORS = {
     "WEARING HARD-HAT": (0, 255, 0),      # Green
@@ -106,6 +140,7 @@ if selected_file is not None:
 # Real-time safety alert banner + Automatic Email Dispatch
     if violations > 0:
         st.error(f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s) without a hard hat!")
+        play_offline_siren()
         
         # Check session state to prevent duplicate emails for the same detection
         if "last_alert_sent" not in st.session_state or st.session_state["last_alert_sent"] != violations:
