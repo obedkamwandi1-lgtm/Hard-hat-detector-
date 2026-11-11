@@ -218,4 +218,48 @@ if selected_file is not None:
           server.send_message(msg)
 
         st.success(
-            "✉️ **Autom
+            "✉️ **Automated Alert Sent:** Notification email dispatched to site"
+            " manager."
+        )
+        st.session_state["last_alert_sent"] = violations
+      except Exception as e:
+        st.error(
+            "Failed to send email alert. Check Streamlit Secrets. Error:"
+            f" {e}"
+        )
+
+  elif len(filtered_predictions) > 0:
+    st.success(
+        "✅ **ALL COMPLIANT:** All detected personnel are wearing hard hats."
+    )
+    st.session_state["last_alert_sent"] = 0
+
+  st.image(img_np, caption="Processed Image", use_container_width=True)
+
+  st.markdown("### 📊 Safety Analytics Summary")
+  total_detected = len(filtered_predictions)
+  if total_detected > 0:
+    compliance_rate = (
+        (total_detected - violations) / total_detected
+    ) * 100
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Personnel", total_detected)
+    m2.metric("Safety Violations", violations, delta_color="inverse")
+    m3.metric("Compliance Rate", f"{compliance_rate:.1f}%")
+
+  st.markdown("### 📋 Detection Logs")
+  st.dataframe(pd.DataFrame(table_data), use_container_width=True)
+else:
+  st.info("No detections found above the selected confidence threshold.")
+
+result_img = Image.fromarray(img_np if 'img_np' in locals() else np.array(image))
+buf = io.BytesIO()
+result_img.save(buf, format="PNG")
+byte_im = buf.getvalue()
+
+st.download_button(
+    label="📥 Download Labeled Image",
+    data=byte_im,
+    file_name="safety_audit_result.png",
+    mime="image/png",
+)
