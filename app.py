@@ -9,6 +9,7 @@ import streamlit as st
 import smtplib
 from email.mime.text import MIMEText
 import streamlit.components.v1 as components
+import qrcode
 
 st.set_page_config(
     page_title="Hard Hat & Safety Detector", page_icon="👷", layout="wide"
@@ -19,16 +20,25 @@ st.title("👷 Site Safety & Hard Hat Detector")
 
 def play_offline_siren():
   siren_js = """
+    <div style="background-color: #ff4b4b; color: white; padding: 12px; border-radius: 8px; text-align: center; font-family: sans-serif; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <h4 style="margin: 0 0 4px 0;">🚨 CONTINUOUS SAFETY ALARM ACTIVE 🚨</h4>
+        <p style="margin: 0 0 10px 0; font-size: 13px;">Hard hat violation detected! Repeating siren and voice warning...</p>
+        <button onclick="stopAlarm()" style="background-color: white; color: #ff4b4b; border: none; padding: 8px 20px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🛑 Stop Alarm</button>
+    </div>
     <script>
-    (function() {
+    let isAlarmActive = true;
+    let audioCtx = null;
+
+    function playSirenLoop() {
+        if (!isAlarmActive) return;
         try {
             const AudioCtx = window.AudioContext || window.webkitAudioContext;
             if (AudioCtx) {
-                const ctx = new AudioCtx();
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
+                audioCtx = new AudioCtx();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
                 osc.type = 'sawtooth';
-                const now = ctx.currentTime;
+                const now = audioCtx.currentTime;
                 osc.frequency.setValueAtTime(880, now);
                 osc.frequency.setValueAtTime(440, now + 0.25);
                 osc.frequency.setValueAtTime(880, now + 0.50);
@@ -36,29 +46,57 @@ def play_offline_siren():
                 gain.gain.setValueAtTime(0.5, now);
                 gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
                 osc.connect(gain);
-                gain.connect(ctx.destination);
+                gain.connect(audioCtx.destination);
                 osc.start(now);
                 osc.stop(now + 1.0);
             }
-
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance("Warning! Hard hat violation detected!");
-                utterance.rate = 1.1;
-                utterance.pitch = 1.0;
-                utterance.volume = 1.0;
-                window.speechSynthesis.speak(utterance);
-            }
         } catch (e) {
-            console.log("Audio/Voice playback blocked or unsupported:", e);
+            console.log("Audio blocked:", e);
         }
-    })();
+        
+        if (isAlarmActive) {
+            setTimeout(playSirenLoop, 1500);
+        }
+    }
+
+    function speakLoop() {
+        if (!isAlarmActive) return;
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance("Warning! Hard hat violation detected!");
+            utterance.rate = 1.1;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            utterance.onend = function() {
+                if (isAlarmActive) {
+                    setTimeout(speakLoop, 500);
+                }
+            };
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    function stopAlarm() {
+        isAlarmActive = false;
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
+        if (audioCtx && audioCtx.state !== 'closed') {
+            audioCtx.close();
+        }
+        const container = document.currentScript ? document.currentScript.parentElement : document.body;
+        const alertBox = container.querySelector('div') || container;
+        alertBox.style.display = 'none';
+    }
+
+    playSirenLoop();
+    speakLoop();
     </script>
     """
-  components.html(siren_js, height=0, width=0)
+  components.html(siren_js, height=130)
 
 
-# Class color mapping (RGB format since Streamlit renders NumPy arrays in RGB)
+# Class color mapping (RGB format)
 CLASS_COLORS = {
     "WEARING HARD-HAT": (0, 255, 0),  # Green
     "NO HARD-HAT": (255, 0, 0),  # Red
@@ -77,6 +115,15 @@ app_mode = st.sidebar.radio(
 )
 conf_threshold = st.sidebar.slider(
     "Confidence Threshold", min_value=0.1, max_value=1.0, value=0.4, step=0.05
+)
+
+# Sidebar QR Code for Mobile Access
+st.sidebar.markdown("---")
+st.sidebar.header("📱 Scan to Mobile")
+app_url = "https://iyu76icob8pbcc5jpfrz95.streamlit.app/"
+qr_img = qrcode.make(app_url)
+st.sidebar.image(
+    qr_img.get_image(), caption="Scan to open on mobile", use_container_width=True
 )
 
 if app_mode == "Image / Snapshot":
