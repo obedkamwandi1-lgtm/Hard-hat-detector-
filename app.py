@@ -1,5 +1,7 @@
 import io
+import os
 import tempfile
+from datetime import datetime
 import cv2
 import numpy as np
 import pandas as pd
@@ -10,6 +12,9 @@ import smtplib
 from email.mime.text import MIMEText
 import streamlit.components.v1 as components
 import qrcode
+
+# Ensure archive directory exists
+os.makedirs("archive", exist_ok=True)
 
 st.set_page_config(
     page_title="Hard Hat & Safety Detector", page_icon="👷", layout="wide"
@@ -122,9 +127,25 @@ st.sidebar.markdown("---")
 st.sidebar.header("📱 Scan to Mobile")
 app_url = "https://iyu76icob8pbcc5jpfrz95.streamlit.app/"
 qr_img = qrcode.make(app_url)
-st.sidebar.image(
-    qr_img.get_image(), caption="Scan to open on mobile", use_container_width=True
+qr_buf = io.BytesIO()
+qr_img.save(qr_buf, format="PNG")
+st.sidebar.image(qr_buf.getvalue(), caption="Scan to open on mobile")
+
+# Sidebar Audit Trail Archive Viewer
+st.sidebar.markdown("---")
+st.sidebar.header("📁 Audit Trail Archive")
+archived_files = sorted(
+    [f for f in os.listdir("archive") if f.endswith(".png")], reverse=True
 )
+st.sidebar.text(f"Total Archived Captures: {len(archived_files)}")
+if archived_files:
+  selected_archive = st.sidebar.selectbox(
+      "Review Past Violation", ["Select capture..."] + archived_files
+  )
+  if selected_archive != "Select capture...":
+    st.sidebar.image(
+        os.path.join("archive", selected_archive), caption=selected_archive
+    )
 
 if app_mode == "Image / Snapshot":
   camera_file = st.camera_input("Take a live photo")
@@ -236,6 +257,13 @@ if app_mode == "Image / Snapshot":
       )
       play_offline_siren()
 
+      # Automated Audit Trail Archiving for Snapshot
+      timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+      archive_path = os.path.join(
+          "archive", f"violation_{timestamp}_{violations}viol.png"
+      )
+      Image.fromarray(img_np).save(archive_path)
+
       if (
           "last_alert_sent" not in st.session_state
           or st.session_state["last_alert_sent"] != violations
@@ -248,8 +276,7 @@ if app_mode == "Image / Snapshot":
           msg = MIMEText(
               "🚨 AUTOMATED SITE SAFETY ALERT\n\nThe vision monitoring system"
               f" detected {violations} person(s) without required safety helmets"
-              " on site.\n\nPlease log in to your dashboard to review the"
-              " capture."
+              f" on site.\n\nCaptured image archived as: {archive_path}"
           )
           msg["Subject"] = "🚨 Urgent: Safety Violation Detected"
           msg["From"] = sender
@@ -260,8 +287,8 @@ if app_mode == "Image / Snapshot":
             server.send_message(msg)
 
           st.success(
-              "✉️ **Automated Alert Sent:** Notification email dispatched to site"
-              " manager."
+              "✉️ **Automated Alert Sent & Archived:** Email dispatched and"
+              " capture saved to audit trail."
           )
           st.session_state["last_alert_sent"] = violations
         except Exception as e:
@@ -405,12 +432,27 @@ elif app_mode == "Video File":
           if frame_violations > 0:
             play_offline_siren()
 
+            # Throttled Video Frame Archiving (saves one snapshot every 5 seconds during violations)
+            current_time = cv2.getTickCount() / cv2.getTickFrequency()
+            if (
+                "last_video_archive" not in st.session_state
+                or (current_time - st.session_state["last_video_archive"])
+                > 5.0
+            ):
+              timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+              archive_path = os.path.join(
+                  "archive",
+                  f"video_violation_{timestamp}_{frame_violations}viol.png",
+              )
+              Image.fromarray(rgb_frame).save(archive_path)
+              st.session_state["last_video_archive"] = current_time
+
         except Exception as e:
           print("Inference error on frame:", e)
 
         st_frame.image(rgb_frame, channels="RGB", use_container_width=True)
 
       cap.release()
-      st.success("✅ Video processing complete!")
+      st.success("✅ Video processing complete! Check your archive sidebar.")
   else:
     st.info("Please upload a video file above to begin video monitoring.")
