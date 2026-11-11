@@ -249,17 +249,18 @@ if selected_file is not None:
 
   st.markdown("### 📋 Detection Logs")
   st.dataframe(pd.DataFrame(table_data), use_container_width=True)
+
+  # Download button safely nested inside the condition
+  result_img = Image.fromarray(img_np)
+  buf = io.BytesIO()
+  result_img.save(buf, format="PNG")
+  byte_im = buf.getvalue()
+
+  st.download_button(
+      label="📥 Download Labeled Image",
+      data=byte_im,
+      file_name="safety_audit_result.png",
+      mime="image/png",
+  )
 else:
-  st.info("No detections found above the selected confidence threshold.")
-
-result_img = Image.fromarray(img_np if 'img_np' in locals() else np.array(image))
-buf = io.BytesIO()
-result_img.save(buf, format="PNG")
-byte_im = buf.getvalue()
-
-st.download_button(
-    label="📥 Download Labeled Image",
-    data=byte_im,
-    file_name="safety_audit_result.png",
-    mime="image/png",
-)
+  st.info("No photo captured or uploaded yet. Take or upload a photo above.")
