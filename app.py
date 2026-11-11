@@ -66,12 +66,15 @@ conf_threshold = st.sidebar.slider(
     "Confidence Threshold", min_value=0.1, max_value=1.0, value=0.4, step=0.05
 )
 
-# Generate local QR Code in Sidebar using the qrcode library
+# Generate local QR Code in Sidebar using the qrcode library with safe buffer conversion
 st.sidebar.markdown("---")
 st.sidebar.header("📱 Scan to Mobile")
 app_url = "https://iyu76icob8pbcc5jpfrz95.streamlit.app/"
 qr_img = qrcode.make(app_url)
-st.sidebar.image(qr_img, caption="Scan to open on mobile")
+qr_buf = io.BytesIO()
+qr_img.save(qr_buf, format="PNG")
+st.sidebar.image(qr_buf.getvalue(), caption="Scan to open on mobile")
+
 # Input methods
 camera_file = st.camera_input("Take a live photo")
 uploaded_file = st.file_uploader(
@@ -215,48 +218,4 @@ if selected_file is not None:
           server.send_message(msg)
 
         st.success(
-            "✉️ **Automated Alert Sent:** Notification email dispatched to site"
-            " manager."
-        )
-        st.session_state["last_alert_sent"] = violations
-      except Exception as e:
-        st.error(
-            "Failed to send email alert. Check Streamlit Secrets. Error:"
-            f" {e}"
-        )
-
-  elif len(filtered_predictions) > 0:
-    st.success(
-        "✅ **ALL COMPLIANT:** All detected personnel are wearing hard hats."
-    )
-    st.session_state["last_alert_sent"] = 0
-
-  st.image(img_np, caption="Processed Image", use_container_width=True)
-
-  st.markdown("### 📊 Safety Analytics Summary")
-  total_detected = len(filtered_predictions)
-  if total_detected > 0:
-    compliance_rate = (
-        (total_detected - violations) / total_detected
-    ) * 100
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total Personnel", total_detected)
-    m2.metric("Safety Violations", violations, delta_color="inverse")
-    m3.metric("Compliance Rate", f"{compliance_rate:.1f}%")
-
-  st.markdown("### 📋 Detection Logs")
-  st.dataframe(pd.DataFrame(table_data), use_container_width=True)
-else:
-  st.info("No detections found above the selected confidence threshold.")
-
-result_img = Image.fromarray(img_np if 'img_np' in locals() else np.array(image))
-buf = io.BytesIO()
-result_img.save(buf, format="PNG")
-byte_im = buf.getvalue()
-
-st.download_button(
-    label="📥 Download Labeled Image",
-    data=byte_im,
-    file_name="safety_audit_result.png",
-    mime="image/png",
-)
+            "✉️ **Autom
