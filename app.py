@@ -19,17 +19,25 @@ st.title("👷 Site Safety & Hard Hat Detector")
 
 def play_offline_siren():
   siren_js = """
+    <div style="background-color: #ff4b4b; color: white; padding: 15px; border-radius: 8px; text-align: center; font-family: sans-serif; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <h3 style="margin: 0 0 5px 0;">🚨 CONTINUOUS SAFETY ALARM ACTIVE 🚨</h3>
+        <p style="margin: 0 0 15px 0; font-size: 14px;">Hard hat violation detected! Siren and voice repeating continuously...</p>
+        <button onclick="stopAlarm()" style="background-color: white; color: #ff4b4b; border: none; padding: 10px 24px; font-weight: bold; border-radius: 5px; cursor: pointer; font-size: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🛑 Stop Alarm</button>
+    </div>
     <script>
-    (function() {
+    let isAlarmActive = true;
+    let audioCtx = null;
+
+    function playSirenLoop() {
+        if (!isAlarmActive) return;
         try {
-            // 1. Play the siren sound effect
             const AudioCtx = window.AudioContext || window.webkitAudioContext;
             if (AudioCtx) {
-                const ctx = new AudioCtx();
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
+                audioCtx = new AudioCtx();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
                 osc.type = 'sawtooth';
-                const now = ctx.currentTime;
+                const now = audioCtx.currentTime;
                 osc.frequency.setValueAtTime(880, now);
                 osc.frequency.setValueAtTime(440, now + 0.25);
                 osc.frequency.setValueAtTime(880, now + 0.50);
@@ -37,27 +45,57 @@ def play_offline_siren():
                 gain.gain.setValueAtTime(0.5, now);
                 gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
                 osc.connect(gain);
-                gain.connect(ctx.destination);
+                gain.connect(audioCtx.destination);
                 osc.start(now);
                 osc.stop(now + 1.0);
             }
-
-            // 2. Speak the voice warning out loud
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance("Warning! Hard hat violation detected!");
-                utterance.rate = 1.0;
-                utterance.pitch = 1.0;
-                utterance.volume = 1.0;
-                window.speechSynthesis.speak(utterance);
-            }
         } catch (e) {
-            console.log("Audio/Voice playback blocked or unsupported:", e);
+            console.log("Audio blocked:", e);
         }
-    })();
+        
+        if (isAlarmActive) {
+            setTimeout(playSirenLoop, 1500);
+        }
+    }
+
+    function speakLoop() {
+        if (!isAlarmActive) return;
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance("Warning! Hard hat violation detected!");
+            utterance.rate = 1.1;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            utterance.onend = function() {
+                if (isAlarmActive) {
+                    setTimeout(speakLoop, 400);
+                }
+            };
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    function stopAlarm() {
+        isAlarmActive = false;
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
+        if (audioCtx && audioCtx.state !== 'closed') {
+            audioCtx.close();
+        }
+        // Hide the alarm banner once stopped
+        const container = document.currentScript ? document.currentScript.parentElement : document.body;
+        // Find and hide the warning box container div
+        const alertBox = container.querySelector('div') || container;
+        alertBox.style.display = 'none';
+    }
+
+    // Start continuous loops
+    playSirenLoop();
+    speakLoop();
     </script>
     """
-  components.html(siren_js, height=0, width=0)
+  components.html(siren_js, height=140)
 
 
 # Class color mapping (RGB format since Streamlit renders NumPy arrays in RGB)
@@ -198,10 +236,7 @@ if selected_file is not None:
     )
 
   if violations > 0:
-    st.error(
-        f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s) without"
-        " a hard hat!"
-    )
+    # Trigger continuous voice/siren alarm banner with Stop button
     play_offline_siren()
 
     if (
