@@ -22,25 +22,37 @@ def play_offline_siren():
     <script>
     (function() {
         try {
+            // 1. Play the siren sound effect
             const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            if (!AudioCtx) return;
-            const ctx = new AudioCtx();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'sawtooth';
-            const now = ctx.currentTime;
-            osc.frequency.setValueAtTime(880, now);
-            osc.frequency.setValueAtTime(440, now + 0.25);
-            osc.frequency.setValueAtTime(880, now + 0.50);
-            osc.frequency.setValueAtTime(440, now + 0.75);
-            gain.gain.setValueAtTime(0.5, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start(now);
-            osc.stop(now + 1.0);
+            if (AudioCtx) {
+                const ctx = new AudioCtx();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                const now = ctx.currentTime;
+                osc.frequency.setValueAtTime(880, now);
+                osc.frequency.setValueAtTime(440, now + 0.25);
+                osc.frequency.setValueAtTime(880, now + 0.50);
+                osc.frequency.setValueAtTime(440, now + 0.75);
+                gain.gain.setValueAtTime(0.5, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 1.0);
+            }
+
+            // 2. Speak the voice warning out loud
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance("Warning! Hard hat violation detected!");
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }
         } catch (e) {
-            console.log("Audio playback blocked or unsupported:", e);
+            console.log("Audio/Voice playback blocked or unsupported:", e);
         }
     })();
     </script>
@@ -81,9 +93,7 @@ uploaded_file = st.file_uploader(
     "Or upload an image file", type=["jpg", "jpeg", "png"]
 )
 
-selected_file = (
-    camera_file if camera_file is not None else uploaded_file
-)
+selected_file = camera_file if camera_file is not None else uploaded_file
 
 if selected_file is not None:
   # Load image
@@ -250,7 +260,7 @@ if selected_file is not None:
   st.markdown("### 📋 Detection Logs")
   st.dataframe(pd.DataFrame(table_data), use_container_width=True)
 
-  # Download button safely nested inside the condition
+  # Download button safely nested inside condition
   result_img = Image.fromarray(img_np)
   buf = io.BytesIO()
   result_img.save(buf, format="PNG")
