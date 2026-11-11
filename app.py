@@ -71,10 +71,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("📱 Scan to Mobile")
 app_url = "https://iyu76icob8pbcc5jpfrz95.streamlit.app/"
 qr_img = qrcode.make(app_url)
-st.sidebar.image(
-    qr_img, caption="Scan to open on mobile", use_container_width=True
-)
-
+st.sidebar.image(qr_img, caption="Scan to open on mobile")
 # Input methods
 camera_file = st.camera_input("Take a live photo")
 uploaded_file = st.file_uploader(
