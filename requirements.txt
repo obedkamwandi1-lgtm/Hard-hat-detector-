@@ -5,3 +5,5 @@ pillow
 inference-sdk
 pandas
 qrcode
+streamlit-webrtc
+av
