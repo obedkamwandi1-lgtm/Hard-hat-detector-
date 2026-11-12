@@ -561,10 +561,15 @@ elif app_mode == "Live Webcam Feed":
       return av.VideoFrame.from_ndarray(img, format="bgr24")
 
 
-  webrtc_streamer(
-      key="hardhat-stream",
-      video_transformer_factory=HardHatTransformer,
-      rtc_configuration={
-          "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-      },
-  )
+webrtc_streamer(
+    key="hardhat-stream",
+    video_transformer_factory=HardHatTransformer,
+    rtc_configuration={
+        "iceServers": [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+            {"urls": ["stun:stun1.l.google.com:19302"]},
+            {"urls": ["stun:stun2.l.google.com:19302"]},
+            {"urls": ["stun:stun3.l.google.com:19302"]},
+        ]
+    },
+)
