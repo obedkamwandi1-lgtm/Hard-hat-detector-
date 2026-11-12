@@ -159,11 +159,15 @@ if app_mode == "Image / Snapshot":
     image = Image.open(selected_file)
 
     client = InferenceHTTPClient(
-        api_url="https://detect.roboflow.com", api_key="Rhe3HdHgQKYFx7aatoOx"
+        api_url="https://detect.roboflow.com",
+        api_key="Rhe3HdHgQKYFx7aatoOx",
     )
 
     try:
-      result = client.infer(image, model_id="hard-hat-detector-l0uba/4")
+      result = client.infer(
+          image,
+          model_id="chinyama-chilila/hard-hat-detector-l0uba-8-rfdetr-small-t1",
+      )
     except Exception as e:
       st.error(
           f"Error connecting to Roboflow API. Please check your internet or API"
@@ -349,7 +353,8 @@ elif app_mode == "Video File":
 
     if st.button("▶️ Start Processing Video"):
       client = InferenceHTTPClient(
-          api_url="https://detect.roboflow.com", api_key="Rhe3HdHgQKYFx7aatoOx"
+          api_url="https://detect.roboflow.com",
+          api_key="Rhe3HdHgQKYFx7aatoOx",
       )
 
       while cap.isOpened():
@@ -366,7 +371,10 @@ elif app_mode == "Video File":
         font_thickness = max(1, int(img_w / 1000))
 
         try:
-          result = client.infer(pil_img, model_id="hard-hat-detector-l0uba/4")
+          result = client.infer(
+              pil_img,
+              model_id="chinyama-chilila/hard-hat-detector-l0uba-8-rfdetr-small-t1",
+          )
           predictions = result.get("predictions", [])
 
           initial_predictions = [
@@ -432,7 +440,7 @@ elif app_mode == "Video File":
           if frame_violations > 0:
             play_offline_siren()
 
-            # Throttled Video Frame Archiving (saves one snapshot every 5 seconds during violations)
+            # Throttled Video Frame Archiving
             current_time = cv2.getTickCount() / cv2.getTickFrequency()
             if (
                 "last_video_archive" not in st.session_state
@@ -455,4 +463,4 @@ elif app_mode == "Video File":
       cap.release()
       st.success("✅ Video processing complete! Check your archive sidebar.")
   else:
-    st.info("Please upload a video file above to begin video monitoring.")
+    st.info("Please upload a video file above to begin video monitoring.")"Please upload a video file above to begin video monitoring.")
