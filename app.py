@@ -116,7 +116,7 @@ CLASS_COLORS = {
 }
 
 
-# Define WebRTC Transformer GLOBALLY so it is always available
+# Define WebRTC Transformer GLOBALLY with Version 9 Model
 class HardHatTransformer(VideoTransformerBase):
 
   def __init__(self):
@@ -138,7 +138,7 @@ class HardHatTransformer(VideoTransformerBase):
     try:
       result = self.client.infer(
           pil_img,
-          model_id="chinyama-chilila/hard-hat-detector-l0uba-8-rfdetr-small-t1",
+          model_id="chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1",
       )
       predictions = result.get("predictions", [])
 
@@ -210,7 +210,7 @@ conf_threshold = st.sidebar.slider(
     "Confidence Threshold", min_value=0.1, max_value=1.0, value=0.4, step=0.05
 )
 
-# Sidebar QR Code for Mobile Access
+# Sidebar QR Code for Mobile Access (Fixed with BytesIO buffer)
 st.sidebar.markdown("---")
 st.sidebar.header("📱 Scan to Mobile")
 app_url = "https://iyu76icob8pbcc5jpfrz95.streamlit.app/"
@@ -254,7 +254,7 @@ if app_mode == "Image / Snapshot":
     try:
       result = client.infer(
           image,
-          model_id="chinyama-chilila/hard-hat-detector-l0uba-8-rfdetr-small-t1",
+          model_id="chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1",
       )
     except Exception as e:
       st.error(
@@ -460,7 +460,7 @@ elif app_mode == "Video File":
         try:
           result = client.infer(
               pil_img,
-              model_id="chinyama-chilila/hard-hat-detector-l0uba-8-rfdetr-small-t1",
+              model_id="chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1",
           )
           predictions = result.get("predictions", [])
 
@@ -469,6 +469,107 @@ elif app_mode == "Video File":
               for p in predictions
               if isinstance(p, dict) and p.get("confidence", 0) >= conf_threshold
           ]
+
+          boxes_for_nms = []
+          scores_for_nms = []
+          for p in initial_predictions:
+            x, y, w, h = p["x"], p["y"], p["width"], p["height"]
+            boxes_for_nms.append([int(x - w / 2), int(y - h / 2), int(w), int(h)])
+            scores_for_nms.append(float(p["confidence"]))
+
+          indices = cv2.dnn.NMSBoxes(
+              boxes_for_nms, scores_for_nms, conf_threshold, 0.4
+          )
+          filtered_predictions = (
+              [initial_predictions[i] for i in np.array(indices).flatten()]
+              if len(indices) > 0
+              else []
+          )
+
+          frame_violations = 0
+          for pred in filtered_predictions:
+            x, y, w, h = (
+                int(pred["x"]),
+                int(pred["y"]),
+                int(pred["width"]),
+                int(pred["height"]),
+            )
+            x1, y1 = int(x - w / 2), int(y - h / 2)
+            x2, y2 = int(x + w / 2), int(y + h / 2)
+
+            cls_name = pred["class"]
+            box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
+
+            cls_lower = cls_name.lower()
+            if "no" in cls_lower or "not" in cls_lower:
+              frame_violations += 1
+
+            label = f"{cls_name} ({pred['confidence']:.2f})"
+            cv2.rectangle(rgb_frame, (x1, y1), (x2, y2), box_color, box_thickness)
+            (text_w, text_h), baseline = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness
+            )
+            bg_y1 = max(0, y1 - text_h - 6)
+            bg_y2 = y1
+            cv2.rectangle(
+                rgb_frame, (x1, bg_y1), (x1 + text_w + 4, bg_y2), box_color, -1
+            )
+            cv2.putText(
+                rgb_frame,
+                label,
+                (x1 + 2, bg_y2 - 2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                (0, 0, 0),
+                font_thickness,
+            )
+
+          if frame_violations > 0:
+            play_offline_siren()
+
+            current_time = cv2.getTickCount() / cv2.getTickFrequency()
+            if (
+                "last_video_archive" not in st.session_state
+                or (current_time - st.session_state["last_video_archive"])
+                > 5.0
+            ):
+              timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+              archive_path = os.path.join(
+                  "archive",
+                  f"video_violation_{timestamp}_{frame_violations}viol.png",
+              )
+              Image.fromarray(rgb_frame).save(archive_path)
+              st.session_state["last_video_archive"] = current_time
+
+        except Exception as e:
+          print("Inference error on frame:", e)
+
+        st_frame.image(rgb_frame, channels="RGB", use_container_width=True)
+
+      cap.release()
+      st.success("✅ Video processing complete! Check your archive sidebar.")
+  else:
+    st.info("Please upload a video file above to begin video monitoring.")
+
+elif app_mode == "Live Webcam Feed":
+  st.markdown("### 🔴 Live Webcam Real-Time Monitoring")
+  st.info(
+      "Click **Start** below to activate your browser webcam. The model will"
+      " automatically scan live video frames for hard hat compliance."
+  )
+
+  webrtc_streamer(
+      key="hardhat-stream",
+      video_transformer_factory=HardHatTransformer,
+      rtc_configuration={
+          "iceServers": [
+              {"urls": ["stun:stun.l.google.com:19302"]},
+              {"urls": ["stun:stun1.l.google.com:19302"]},
+              {"urls": ["stun:stun2.l.google.com:19302"]},
+              {"urls": ["stun:stun3.l.google.com:19302"]},
+          ]
+      },
+  )
 
           boxes_for_nms = []
           scores_for_nms = []
