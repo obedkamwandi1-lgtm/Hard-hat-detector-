@@ -1,6 +1,7 @@
 import io
 import os
 import tempfile
+import time
 from datetime import datetime
 import cv2
 import numpy as np
@@ -12,8 +13,6 @@ import smtplib
 from email.mime.text import MIMEText
 import streamlit.components.v1 as components
 import qrcode
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
-import av
 from streamlit_js_eval import get_geolocation
 
 # Ensure archive directory exists
@@ -27,7 +26,7 @@ st.title("👷 Site Safety & Hard Hat Detector")
 
 
 def play_offline_siren():
-  siren_js = """
+    siren_js = """
     <div style="background-color: #ff4b4b; color: white; padding: 12px; border-radius: 8px; text-align: center; font-family: sans-serif; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
         <h4 style="margin: 0 0 4px 0;">🚨 CONTINUOUS SAFETY ALARM ACTIVE 🚨</h4>
         <p style="margin: 0 0 10px 0; font-size: 13px;">Hard hat violation detected! Repeating siren and voice warning...</p>
@@ -101,18 +100,18 @@ def play_offline_siren():
     speakLoop();
     </script>
     """
-  components.html(siren_js, height=130)
+    components.html(siren_js, height=130)
 
 
 def render_google_map(lat: float, lon: float, zone_label: str):
-  maps_link = f"https://www.google.com/maps?q={lat},{lon}"
-  embed_url = f"https://maps.google.com/maps?q={lat},{lon}&z=16&output=embed"
-  st.markdown(f"### 📍 Incident GPS Location — {zone_label}")
-  st.markdown(
-      f"**Coordinates:** `{lat:.6f}, {lon:.6f}` | 🔗 **[Open Exact Pin in"
-      f" Google Maps]({maps_link})**"
-  )
-  components.iframe(embed_url, height=350)
+    maps_link = f"https://www.google.com/maps?q={lat},{lon}"
+    embed_url = f"https://maps.google.com/maps?q={lat},{lon}&z=16&output=embed"
+    st.markdown(f"### 📍 Incident GPS Location — {zone_label}")
+    st.markdown(
+        f"**Coordinates:** `{lat:.6f}, {lon:.6f}` | 🔗 **[Open Exact Pin in"
+        f" Google Maps]({maps_link})**"
+    )
+    components.iframe(embed_url, height=350)
 
 
 # Class color mapping (RGB format)
@@ -128,192 +127,30 @@ CLASS_COLORS = {
 }
 
 
-# Define WebRTC Transformer GLOBALLY with Version 9 Model
-class HardHatTransformer(VideoTransformerBase):
-
-  def __init__(self):
-    self.client = InferenceHTTPClient(
-        api_url="https://detect.roboflow.com",
-        api_key="Rhe3HdHgQKYFx7aatoOx",
-    )
-
-  def transform(self, frame: av.VideoFrame) -> av.VideoFrame:
-    img = frame.to_ndarray(format="bgr24")
-    rgb_frame = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    pil_img = Image.fromarray(rgb_frame)
-    img_h, img_w = rgb_frame.shape[:2]
-
-    box_thickness = max(1, int(img_w / 600))
-    font_scale = max(0.3, img_w / 1500)
-    font_thickness = max(1, int(img_w / 1000))
-
-    try:
-      result = self.client.infer(
-          pil_img,
-          model_id="chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1",
-      )
-      predictions = result.get("predictions", [])
-
-      initial_predictions = [
-          p
-          for p in predictions
-          if isinstance(p, dict) and p.get("confidence", 0) >= 0.4
-      ]
-
-      boxes_for_nms = []
-      scores_for_nms = []
-      for p in initial_predictions:
-        x, y, w, h = p["x"], p["y"], p["width"], p["height"]
-        boxes_for_nms.append([int(x - w / 2), int(y - h / 2), int(w), int(h)])
-        scores_for_nms.append(float(p["confidence"]))
-
-      indices = cv2.dnn.NMSBoxes(boxes_for_nms, scores_for_nms, 0.4, 0.4)
-      filtered_predictions = (
-          [initial_predictions[i] for i in np.array(indices).flatten()]
-          if len(indices) > 0
-          else []
-      )
-
-      for pred in filtered_predictions:
-        x, y, w, h = (
-            int(pred["x"]),
-            int(pred["y"]),
-            int(pred["width"]),
-            int(pred["height"]),
-        )
-        x1, y1 = int(x - w / 2), int(y - h / 2)
-        x2, y2 = int(x + w / 2), int(y + h / 2)
-
-        cls_name = pred["class"]
-        box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
-
-        label = f"{cls_name} ({pred['confidence']:.2f})"
-        cv2.rectangle(img, (x1, y1), (x2, y2), box_color, box_thickness)
-        (text_w, text_h), baseline = cv2.getTextSize(
-            label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness
-        )
-        bg_y1 = max(0, y1 - text_h - 6)
-        bg_y2 = y1
-        cv2.rectangle(
-            img, (x1, bg_y1), (x1 + text_w + 4, bg_y2), box_color, -1
-        )
-        cv2.putText(
-            img,
-            label,
-            (x1 + 2, bg_y2 - 2),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale,
-            (0, 0, 0),
-            font_thickness,
-        )
-    except Exception as e:
-      print("WebRTC inference error:", e)
-
-    return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-
-# Sidebar controls
-st.sidebar.header("⚙️ Detection Settings")
-app_mode = st.sidebar.radio(
-    "Select Operation Mode",
-    ["Image / Snapshot", "Video File", "Live Webcam Feed"],
-)
-conf_threshold = st.sidebar.slider(
-    "Confidence Threshold", min_value=0.1, max_value=1.0, value=0.4, step=0.05
-)
-
-# Sidebar Location & GPS Tracking
-st.sidebar.markdown("---")
-st.sidebar.header("📍 Site Location & GPS")
-location_source = st.sidebar.radio(
-    "Location Source",
-    ["Automatic Device GPS", "Fixed Site Zone"],
-)
-
-SITE_ZONES = {
-    "Kansanshi Mine (Solwezi)": (-12.115800, 26.402500),
-    "Main Site Gate (Lusaka HQ)": (-15.387500, 28.322800),
-    "Copperbelt Shaft 1 (Kitwe)": (-12.802400, 28.213200),
-    "Processing Plant (Chingola)": (-12.528900, 27.883800),
-    "Smelter Zone (Mufulira)": (-12.549800, 28.240700),
-}
-
-active_lat, active_lon = -12.115800, 26.402500
-active_zone_name = "Kansanshi Mine (Solwezi)"
-
-if location_source == "Automatic Device GPS":
-  loc = get_geolocation()
-  if loc and "coords" in loc:
-    active_lat = float(loc["coords"]["latitude"])
-    active_lon = float(loc["coords"]["longitude"])
-    active_zone_name = "Live Device GPS"
-    st.sidebar.success(f"GPS Locked: {active_lat:.5f}, {active_lon:.5f}")
-  else:
-    st.sidebar.warning(
-        "Allow browser location permission for live GPS. Using Kansanshi Mine"
-        " fallback coordinates."
-    )
-    active_zone_name = "Kansanshi Mine (Fallback)"
-else:
-  selected_zone = st.sidebar.selectbox(
-      "Select Camera Zone", list(SITE_ZONES.keys())
-  )
-  active_lat, active_lon = SITE_ZONES[selected_zone]
-  active_zone_name = selected_zone
-  st.sidebar.info(f"Zone GPS: {active_lat:.5f}, {active_lon:.5f}")
-
-# Sidebar QR Code for Mobile Access
-st.sidebar.markdown("---")
-st.sidebar.header("📱 Scan to Mobile")
-app_url = "https://iyu76icob8pbcc5jpfrz95.streamlit.app/"
-qr_img = qrcode.make(app_url)
-qr_buf = io.BytesIO()
-qr_img.save(qr_buf, format="PNG")
-st.sidebar.image(qr_buf.getvalue(), caption="Scan to open on mobile")
-
-# Sidebar Audit Trail Archive Viewer
-st.sidebar.markdown("---")
-st.sidebar.header("📁 Audit Trail Archive")
-archived_files = sorted(
-    [f for f in os.listdir("archive") if f.endswith(".png")], reverse=True
-)
-st.sidebar.text(f"Total Archived Captures: {len(archived_files)}")
-if archived_files:
-  selected_archive = st.sidebar.selectbox(
-      "Review Past Violation", ["Select capture..."] + archived_files
-  )
-  if selected_archive != "Select capture...":
-    st.sidebar.image(
-        os.path.join("archive", selected_archive), caption=selected_archive
-    )
-
-if app_mode == "Image / Snapshot":
-  camera_file = st.camera_input("Take a live photo")
-  uploaded_file = st.file_uploader(
-      "Or upload an image file", type=["jpg", "jpeg", "png"]
-  )
-
-  selected_file = camera_file if camera_file is not None else uploaded_file
-
-  if selected_file is not None:
-    image = Image.open(selected_file)
-
+def process_and_display_image(
+    image: Image.Image,
+    conf_threshold: float,
+    active_lat: float,
+    active_lon: float,
+    active_zone_name: str,
+    key_prefix: str = "img",
+):
     client = InferenceHTTPClient(
         api_url="https://detect.roboflow.com",
         api_key="Rhe3HdHgQKYFx7aatoOx",
     )
 
     try:
-      result = client.infer(
-          image,
-          model_id="chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1",
-      )
+        result = client.infer(
+            image,
+            model_id="chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1",
+        )
     except Exception as e:
-      st.error(
-          "Error connecting to Roboflow API. Please check your internet or API"
-          f" key. Details: {e}"
-      )
-      st.stop()
+        st.error(
+            "Error connecting to Roboflow API. Please check your internet or API"
+            f" key. Details: {e}"
+        )
+        return
 
     predictions = result.get("predictions", [])
     img_np = np.array(image)
@@ -332,9 +169,9 @@ if app_mode == "Image / Snapshot":
     boxes_for_nms = []
     scores_for_nms = []
     for p in initial_predictions:
-      x, y, w, h = p["x"], p["y"], p["width"], p["height"]
-      boxes_for_nms.append([int(x - w / 2), int(y - h / 2), int(w), int(h)])
-      scores_for_nms.append(float(p["confidence"]))
+        x, y, w, h = p["x"], p["y"], p["width"], p["height"]
+        boxes_for_nms.append([int(x - w / 2), int(y - h / 2), int(w), int(h)])
+        scores_for_nms.append(float(p["confidence"]))
 
     indices = cv2.dnn.NMSBoxes(
         boxes_for_nms, scores_for_nms, conf_threshold, 0.4
@@ -350,127 +187,127 @@ if app_mode == "Image / Snapshot":
     table_data = []
 
     for idx, pred in enumerate(filtered_predictions):
-      x, y, w, h = (
-          int(pred["x"]),
-          int(pred["y"]),
-          int(pred["width"]),
-          int(pred["height"]),
-      )
-      x1, y1 = int(x - w / 2), int(y - h / 2)
-      x2, y2 = int(x + w / 2), int(y + h / 2)
+        x, y, w, h = (
+            int(pred["x"]),
+            int(pred["y"]),
+            int(pred["width"]),
+            int(pred["height"]),
+        )
+        x1, y1 = int(x - w / 2), int(y - h / 2)
+        x2, y2 = int(x + w / 2), int(y + h / 2)
 
-      cls_name = pred["class"]
-      box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
-      class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
+        cls_name = pred["class"]
+        box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
+        class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
 
-      cls_lower = cls_name.lower()
-      if "no" in cls_lower or "not" in cls_lower:
-        violations += 1
+        cls_lower = cls_name.lower()
+        if "no" in cls_lower or "not" in cls_lower:
+            violations += 1
 
-      table_data.append({
-          "ID": idx + 1,
-          "Class": cls_name,
-          "Confidence": f"{pred['confidence'] * 100:.1f}%",
-          "Bounding Box": f"[{x1}, {y1}, {x2}, {y2}]",
-          "Zone": active_zone_name,
-          "GPS": f"{active_lat:.5f}, {active_lon:.5f}",
-      })
+        table_data.append({
+            "ID": idx + 1,
+            "Class": cls_name,
+            "Confidence": f"{pred['confidence'] * 100:.1f}%",
+            "Bounding Box": f"[{x1}, {y1}, {x2}, {y2}]",
+            "Zone": active_zone_name,
+            "GPS": f"{active_lat:.5f}, {active_lon:.5f}",
+        })
 
-      label = f"{cls_name} ({pred['confidence']:.2f})"
-      cv2.rectangle(img_np, (x1, y1), (x2, y2), box_color, box_thickness)
-      (text_w, text_h), baseline = cv2.getTextSize(
-          label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness
-      )
-      bg_y1 = max(0, y1 - text_h - 6)
-      bg_y2 = y1
-      cv2.rectangle(
-          img_np, (x1, bg_y1), (x1 + text_w + 4, bg_y2), box_color, -1
-      )
-      cv2.putText(
-          img_np,
-          label,
-          (x1 + 2, bg_y2 - 2),
-          cv2.FONT_HERSHEY_SIMPLEX,
-          font_scale,
-          (0, 0, 0),
-          font_thickness,
-      )
+        label = f"{cls_name} ({pred['confidence']:.2f})"
+        cv2.rectangle(img_np, (x1, y1), (x2, y2), box_color, box_thickness)
+        (text_w, text_h), baseline = cv2.getTextSize(
+            label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness
+        )
+        bg_y1 = max(0, y1 - text_h - 6)
+        bg_y2 = y1
+        cv2.rectangle(
+            img_np, (x1, bg_y1), (x1 + text_w + 4, bg_y2), box_color, -1
+        )
+        cv2.putText(
+            img_np,
+            label,
+            (x1 + 2, bg_y2 - 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_scale,
+            (0, 0, 0),
+            font_thickness,
+        )
 
     if violations > 0:
-      st.error(
-          f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s)"
-          f" without a hard hat at **{active_zone_name}**!"
-      )
-      play_offline_siren()
+        st.error(
+            f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s)"
+            f" without a hard hat at **{active_zone_name}**!"
+        )
+        play_offline_siren()
 
-      timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-      archive_path = os.path.join(
-          "archive", f"violation_{timestamp}_{violations}viol.png"
-      )
-      Image.fromarray(img_np).save(archive_path)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_path = os.path.join(
+            "archive", f"violation_{timestamp}_{violations}viol.png"
+        )
+        Image.fromarray(img_np).save(archive_path)
 
-      google_maps_link = (
-          f"https://www.google.com/maps?q={active_lat},{active_lon}"
-      )
+        google_maps_link = (
+            f"https://www.google.com/maps?q={active_lat},{active_lon}"
+        )
 
-      if (
-          "last_alert_sent" not in st.session_state
-          or st.session_state["last_alert_sent"] != violations
-      ):
-        try:
-          sender = st.secrets["email"]["sender"]
-          password = st.secrets["email"]["password"]
-          receiver = st.secrets["email"]["receiver"]
+        if (
+            "last_alert_sent" not in st.session_state
+            or st.session_state["last_alert_sent"] != violations
+        ):
+            try:
+                sender = st.secrets["email"]["sender"]
+                password = st.secrets["email"]["password"]
+                receiver = st.secrets["email"]["receiver"]
 
-          msg = MIMEText(
-              "🚨 AUTOMATED SITE SAFETY ALERT\n\nThe vision monitoring system"
-              f" detected {violations} person(s) without required safety"
-              f" helmets on site.\n\nZone: {active_zone_name}\nGPS"
-              f" Coordinates: {active_lat:.6f}, {active_lon:.6f}\nGoogle Maps"
-              f" Pin: {google_maps_link}\n\nCaptured image archived as:"
-              f" {archive_path}"
-          )
-          msg["Subject"] = f"🚨 Urgent: Safety Violation at {active_zone_name}"
-          msg["From"] = sender
-          msg["To"] = receiver
+                msg = MIMEText(
+                    "🚨 AUTOMATED SITE SAFETY ALERT\n\nThe vision monitoring system"
+                    f" detected {violations} person(s) without required safety"
+                    f" helmets on site.\n\nZone: {active_zone_name}\nGPS"
+                    f" Coordinates: {active_lat:.6f}, {active_lon:.6f}\nGoogle Maps"
+                    f" Pin: {google_maps_link}\n\nCaptured image archived as:"
+                    f" {archive_path}"
+                )
+                msg["Subject"] = f"🚨 Urgent: Safety Violation at {active_zone_name}"
+                msg["From"] = sender
+                msg["To"] = receiver
 
-          with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender, password)
-            server.send_message(msg)
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                    server.login(sender, password)
+                    server.send_message(msg)
 
-          st.success(
-              "✉️ **Automated Alert Sent & Archived:** Email with Google Maps"
-              " pin dispatched and capture saved to audit trail."
-          )
-          st.session_state["last_alert_sent"] = violations
-        except Exception as e:
-          st.error(
-              "Failed to send email alert. Check Streamlit Secrets. Error:"
-              f" {e}"
-          )
+                st.success(
+                    "✉️ **Automated Alert Sent & Archived:** Email with Google Maps"
+                    " pin dispatched and capture saved to audit trail."
+                )
+                st.session_state["last_alert_sent"] = violations
+            except Exception as e:
+                st.error(
+                    "Failed to send email alert. Check Streamlit Secrets. Error:"
+                    f" {e}"
+                )
 
     elif len(filtered_predictions) > 0:
-      st.success(
-          "✅ **ALL COMPLIANT:** All detected personnel are wearing hard hats."
-      )
-      st.session_state["last_alert_sent"] = 0
+        st.success(
+            "✅ **ALL COMPLIANT:** All detected personnel are wearing hard hats."
+        )
+        st.session_state["last_alert_sent"] = 0
 
-    st.image(img_np, caption="Processed Image", use_container_width=True)
+    st.image(img_np, caption="Processed Camera Output", use_container_width=True)
 
     # Render Google Maps pin whenever a violation occurs
     if violations > 0:
-      render_google_map(active_lat, active_lon, active_zone_name)
+        render_google_map(active_lat, active_lon, active_zone_name)
 
     st.markdown("### 📊 Safety Analytics Summary")
     total_detected = len(filtered_predictions)
     if total_detected > 0:
-      compliance_rate = (
-          (total_detected - violations) / total_detected
-      ) * 100
-      m1, m2, m3 = st.columns(3)
-      m1.metric("Total Personnel", total_detected)
-      m2.metric("Safety Violations", violations, delta_color="inverse")
-      m3.metric("Compliance Rate", f"{compliance_rate:.1f}%")
+        compliance_rate = (
+            (total_detected - violations) / total_detected
+        ) * 100
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Personnel", total_detected)
+        m2.metric("Safety Violations", violations, delta_color="inverse")
+        m3.metric("Compliance Rate", f"{compliance_rate:.1f}%")
 
     st.markdown("### 📋 Detection Logs")
     st.dataframe(pd.DataFrame(table_data), use_container_width=True)
@@ -485,165 +322,276 @@ if app_mode == "Image / Snapshot":
         data=byte_im,
         file_name="safety_audit_result.png",
         mime="image/png",
+        key=f"dl_{key_prefix}_{time.time()}",
     )
-  else:
-    st.info("No photo captured or uploaded yet. Take or upload a photo above.")
+
+
+# Sidebar controls
+st.sidebar.header("⚙️ Detection Settings")
+app_mode = st.sidebar.radio(
+    "Select Operation Mode",
+    ["Image / Snapshot", "Video File", "Live Webcam Feed"],
+)
+conf_threshold = st.sidebar.slider(
+    "Confidence Threshold", min_value=0.1, max_value=1.0, value=0.4, step=0.05
+)
+
+# Sidebar Location & GPS Tracking
+st.sidebar.markdown("---")
+st.sidebar.header("📍 Site Location & GPS")
+location_source = st.sidebar.radio(
+    "Location Source",
+    ["Fixed Site Zone", "Automatic Device GPS"],
+)
+
+SITE_ZONES = {
+    "Kansanshi Mine (Solwezi)": (-12.115800, 26.402500),
+    "Main Site Gate (Lusaka HQ)": (-15.387500, 28.322800),
+    "Copperbelt Shaft 1 (Kitwe)": (-12.802400, 28.213200),
+    "Processing Plant (Chingola)": (-12.528900, 27.883800),
+    "Smelter Zone (Mufulira)": (-12.549800, 28.240700),
+}
+
+active_lat, active_lon = -12.115800, 26.402500
+active_zone_name = "Kansanshi Mine (Solwezi)"
+
+if location_source == "Automatic Device GPS":
+    loc = get_geolocation()
+    if loc and "coords" in loc:
+        active_lat = float(loc["coords"]["latitude"])
+        active_lon = float(loc["coords"]["longitude"])
+        active_zone_name = "Live Device GPS"
+        st.sidebar.success(f"GPS Locked: {active_lat:.5f}, {active_lon:.5f}")
+    else:
+        st.sidebar.warning(
+            "Allow browser location permission for live GPS. Using Kansanshi Mine"
+            " fallback coordinates."
+        )
+        active_zone_name = "Kansanshi Mine (Fallback)"
+else:
+    selected_zone = st.sidebar.selectbox(
+        "Select Camera Zone", list(SITE_ZONES.keys())
+    )
+    active_lat, active_lon = SITE_ZONES[selected_zone]
+    active_zone_name = selected_zone
+    st.sidebar.info(f"Zone GPS: {active_lat:.5f}, {active_lon:.5f}")
+
+# Sidebar QR Code for Mobile Access
+st.sidebar.markdown("---")
+st.sidebar.header("📱 Scan to Mobile")
+app_url = "https://iyu76icob8pbcc5jpfrz95.streamlit.app/"
+qr_img = qrcode.make(app_url)
+qr_buf = io.BytesIO()
+qr_img.save(qr_buf, format="PNG")
+st.sidebar.image(qr_buf.getvalue(), caption="Scan to open on mobile")
+
+# Sidebar Audit Trail Archive Viewer
+st.sidebar.markdown("---")
+st.sidebar.header("📁 Audit Trail Archive")
+archived_files = sorted(
+    [f for f in os.listdir("archive") if f.endswith(".png")], reverse=True
+)
+st.sidebar.text(f"Total Archived Captures: {len(archived_files)}")
+if archived_files:
+    selected_archive = st.sidebar.selectbox(
+        "Review Past Violation", ["Select capture..."] + archived_files
+    )
+    if selected_archive != "Select capture...":
+        st.sidebar.image(
+            os.path.join("archive", selected_archive), caption=selected_archive
+        )
+
+if app_mode == "Image / Snapshot":
+    camera_file = st.camera_input("Take a live photo")
+    uploaded_file = st.file_uploader(
+        "Or upload an image file", type=["jpg", "jpeg", "png"]
+    )
+
+    selected_file = camera_file if camera_file is not None else uploaded_file
+
+    if selected_file is not None:
+        image = Image.open(selected_file)
+        process_and_display_image(
+            image,
+            conf_threshold,
+            active_lat,
+            active_lon,
+            active_zone_name,
+            key_prefix="snap",
+        )
+    else:
+        st.info("No photo captured or uploaded yet. Take or upload a photo above.")
 
 elif app_mode == "Video File":
-  st.markdown("### 🎥 Video Stream Compliance Analysis")
-  video_file = st.file_uploader(
-      "Upload a construction site video", type=["mp4", "avi", "mov"]
-  )
+    st.markdown("### 🎥 Video Stream Compliance Analysis")
+    video_file = st.file_uploader(
+        "Upload a construction site video", type=["mp4", "avi", "mov"]
+    )
 
-  if video_file is not None:
-    tfile = tempfile.NamedTemporaryFile(delete=False)
-    tfile.write(video_file.read())
-    video_path = tfile.name
+    if video_file is not None:
+        tfile = tempfile.NamedTemporaryFile(delete=False)
+        tfile.write(video_file.read())
+        video_path = tfile.name
 
-    cap = cv2.VideoCapture(video_path)
-    st_frame = st.empty()
+        cap = cv2.VideoCapture(video_path)
+        st_frame = st.empty()
 
-    if st.button("▶️ Start Processing Video"):
-      client = InferenceHTTPClient(
-          api_url="https://detect.roboflow.com",
-          api_key="Rhe3HdHgQKYFx7aatoOx",
-      )
-
-      video_had_violation = False
-
-      while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-          break
-
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(rgb_frame)
-        img_h, img_w = rgb_frame.shape[:2]
-
-        box_thickness = max(1, int(img_w / 600))
-        font_scale = max(0.3, img_w / 1500)
-        font_thickness = max(1, int(img_w / 1000))
-
-        try:
-          result = client.infer(
-              pil_img,
-              model_id="chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1",
-          )
-          predictions = result.get("predictions", [])
-
-          initial_predictions = [
-              p
-              for p in predictions
-              if isinstance(p, dict) and p.get("confidence", 0) >= conf_threshold
-          ]
-
-          boxes_for_nms = []
-          scores_for_nms = []
-          for p in initial_predictions:
-            x, y, w, h = p["x"], p["y"], p["width"], p["height"]
-            boxes_for_nms.append(
-                [int(x - w / 2), int(y - h / 2), int(w), int(h)]
-            )
-            scores_for_nms.append(float(p["confidence"]))
-
-          indices = cv2.dnn.NMSBoxes(
-              boxes_for_nms, scores_for_nms, conf_threshold, 0.4
-          )
-          filtered_predictions = (
-              [initial_predictions[i] for i in np.array(indices).flatten()]
-              if len(indices) > 0
-              else []
-          )
-
-          frame_violations = 0
-          for pred in filtered_predictions:
-            x, y, w, h = (
-                int(pred["x"]),
-                int(pred["y"]),
-                int(pred["width"]),
-                int(pred["height"]),
-            )
-            x1, y1 = int(x - w / 2), int(y - h / 2)
-            x2, y2 = int(x + w / 2), int(y + h / 2)
-
-            cls_name = pred["class"]
-            box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
-
-            cls_lower = cls_name.lower()
-            if "no" in cls_lower or "not" in cls_lower:
-              frame_violations += 1
-
-            label = f"{cls_name} ({pred['confidence']:.2f})"
-            cv2.rectangle(
-                rgb_frame, (x1, y1), (x2, y2), box_color, box_thickness
-            )
-            (text_w, text_h), baseline = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness
-            )
-            bg_y1 = max(0, y1 - text_h - 6)
-            bg_y2 = y1
-            cv2.rectangle(
-                rgb_frame, (x1, bg_y1), (x1 + text_w + 4, bg_y2), box_color, -1
-            )
-            cv2.putText(
-                rgb_frame,
-                label,
-                (x1 + 2, bg_y2 - 2),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                font_scale,
-                (0, 0, 0),
-                font_thickness,
+        if st.button("▶️ Start Processing Video"):
+            client = InferenceHTTPClient(
+                api_url="https://detect.roboflow.com",
+                api_key="Rhe3HdHgQKYFx7aatoOx",
             )
 
-          if frame_violations > 0:
-            video_had_violation = True
-            play_offline_siren()
+            video_had_violation = False
 
-            current_time = cv2.getTickCount() / cv2.getTickFrequency()
-            if (
-                "last_video_archive" not in st.session_state
-                or (current_time - st.session_state["last_video_archive"])
-                > 5.0
-            ):
-              timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-              archive_path = os.path.join(
-                  "archive",
-                  f"video_violation_{timestamp}_{frame_violations}viol.png",
-              )
-              Image.fromarray(rgb_frame).save(archive_path)
-              st.session_state["last_video_archive"] = current_time
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
 
-        except Exception as e:
-          print("Inference error on frame:", e)
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(rgb_frame)
+                img_h, img_w = rgb_frame.shape[:2]
 
-        st_frame.image(rgb_frame, channels="RGB", use_container_width=True)
+                box_thickness = max(1, int(img_w / 600))
+                font_scale = max(0.3, img_w / 1500)
+                font_thickness = max(1, int(img_w / 1000))
 
-      cap.release()
-      st.success("✅ Video processing complete! Check your archive sidebar.")
-      if video_had_violation:
-        render_google_map(active_lat, active_lon, active_zone_name)
-  else:
-    st.info("Please upload a video file above to begin video monitoring.")
+                try:
+                    result = client.infer(
+                        pil_img,
+                        model_id="chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1",
+                    )
+                    predictions = result.get("predictions", [])
+
+                    initial_predictions = [
+                        p
+                        for p in predictions
+                        if isinstance(p, dict) and p.get("confidence", 0) >= conf_threshold
+                    ]
+
+                    boxes_for_nms = []
+                    scores_for_nms = []
+                    for p in initial_predictions:
+                        x, y, w, h = p["x"], p["y"], p["width"], p["height"]
+                        boxes_for_nms.append(
+                            [int(x - w / 2), int(y - h / 2), int(w), int(h)]
+                        )
+                        scores_for_nms.append(float(p["confidence"]))
+
+                    indices = cv2.dnn.NMSBoxes(
+                        boxes_for_nms, scores_for_nms, conf_threshold, 0.4
+                    )
+                    filtered_predictions = (
+                        [initial_predictions[i] for i in np.array(indices).flatten()]
+                        if len(indices) > 0
+                        else []
+                    )
+
+                    frame_violations = 0
+                    for pred in filtered_predictions:
+                        x, y, w, h = (
+                            int(pred["x"]),
+                            int(pred["y"]),
+                            int(pred["width"]),
+                            int(pred["height"]),
+                        )
+                        x1, y1 = int(x - w / 2), int(y - h / 2)
+                        x2, y2 = int(x + w / 2), int(y + h / 2)
+
+                        cls_name = pred["class"]
+                        box_color = CLASS_COLORS.get(cls_name, (255, 255, 0))
+
+                        cls_lower = cls_name.lower()
+                        if "no" in cls_lower or "not" in cls_lower:
+                            frame_violations += 1
+
+                        label = f"{cls_name} ({pred['confidence']:.2f})"
+                        cv2.rectangle(
+                            rgb_frame, (x1, y1), (x2, y2), box_color, box_thickness
+                        )
+                        (text_w, text_h), baseline = cv2.getTextSize(
+                            label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness
+                        )
+                        bg_y1 = max(0, y1 - text_h - 6)
+                        bg_y2 = y1
+                        cv2.rectangle(
+                            rgb_frame, (x1, bg_y1), (x1 + text_w + 4, bg_y2), box_color, -1
+                        )
+                        cv2.putText(
+                            rgb_frame,
+                            label,
+                            (x1 + 2, bg_y2 - 2),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            font_scale,
+                            (0, 0, 0),
+                            font_thickness,
+                        )
+
+                    if frame_violations > 0:
+                        video_had_violation = True
+                        play_offline_siren()
+
+                        current_time = cv2.getTickCount() / cv2.getTickFrequency()
+                        if (
+                            "last_video_archive" not in st.session_state
+                            or (current_time - st.session_state["last_video_archive"])
+                            > 5.0
+                        ):
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            archive_path = os.path.join(
+                                "archive",
+                                f"video_violation_{timestamp}_{frame_violations}viol.png",
+                            )
+                            Image.fromarray(rgb_frame).save(archive_path)
+                            st.session_state["last_video_archive"] = current_time
+
+                except Exception as e:
+                    print("Inference error on frame:", e)
+
+                st_frame.image(rgb_frame, channels="RGB", use_container_width=True)
+
+            cap.release()
+            st.success("✅ Video processing complete! Check your archive sidebar.")
+            if video_had_violation:
+                render_google_map(active_lat, active_lon, active_zone_name)
+    else:
+        st.info("Please upload a video file above to begin video monitoring.")
 
 elif app_mode == "Live Webcam Feed":
-  st.markdown("### 🔴 Live Webcam Real-Time Monitoring")
-  st.info(
-      f"Monitoring **{active_zone_name}** (`{active_lat:.5f},"
-      f" {active_lon:.5f}`). Click **Start** below to activate your browser"
-      " webcam."
-  )
+    st.markdown("### 🔴 Live Webcam Real-Time Monitoring (HTTPS Auto-Scanner)")
+    st.info(
+        f"Monitoring **{active_zone_name}** (`{active_lat:.5f},"
+        f" {active_lon:.5f}`) via reliable HTTPS camera feed."
+    )
 
-  webrtc_streamer(
-      key="hardhat-stream",
-      video_transformer_factory=HardHatTransformer,
-      rtc_configuration={
-          "iceServers": [
-              {"urls": ["stun:stun.l.google.com:19302"]},
-              {"urls": ["stun:stun1.l.google.com:19302"]},
-              {"urls": ["stun:stun2.l.google.com:19302"]},
-              {"urls": ["stun:stun3.l.google.com:19302"]},
-          ]
-      },
-  )
+    col_cam, col_ctrl = st.columns([3, 1])
+    with col_ctrl:
+        auto_scan = st.toggle("🔄 Continuous Auto-Scan", value=True)
+        scan_interval = st.slider(
+            "Scan Interval (sec)", min_value=1.0, max_value=5.0, value=2.0, step=0.5
+        )
+        st.caption(
+            "Click **Take Photo** in the camera feed to capture and scan, or toggle Auto-Scan to automatically trigger shutter frames."
+        )
 
-  render_google_map(active_lat, active_lon, active_zone_name)
+    with col_cam:
+        live_cam_frame = st.camera_input(
+            "Live Site Camera Feed", key="live_https_cam"
+        )
+
+    if live_cam_frame is not None:
+        live_img = Image.open(live_cam_frame)
+        process_and_display_image(
+            live_img,
+            conf_threshold,
+            active_lat,
+            active_lon,
+            active_zone_name,
+            key_prefix="live",
+        )
+
+        if auto_scan:
+            st.toast(f"Next live scan in {scan_interval}s...", icon="📷")
+            time.sleep(scan_interval)
+            st.rerun()
