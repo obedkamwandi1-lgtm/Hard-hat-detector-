@@ -117,8 +117,10 @@ def render_google_map(lat: float, lon: float, zone_label: str):
 def render_realtime_webcam_monitor(
     conf_threshold: float, zone_name: str, lat: float, lon: float
 ):
-    """Hands-free HTML5 real-time camera monitor with direct Roboflow inference & live alarm."""
+    """Hands-free HTML5 real-time camera monitor with Roboflow inference, live siren & EmailJS email alerts."""
+    maps_link = f"https://www.google.com/maps?q={lat},{lon}"
     html_code = f"""
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <div style="font-family: sans-serif; color: #fafafa; background: #1e2129; padding: 16px; border-radius: 10px; border: 1px solid #31333f;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
             <div>
@@ -134,6 +136,10 @@ def render_realtime_webcam_monitor(
                     ⏹ Stop Monitoring
                 </button>
             </div>
+        </div>
+
+        <div id="email-status" style="display: none; background: #1565c0; color: white; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 10px; text-align: center;">
+            ✉️ Email status...
         </div>
 
         <div id="alarm-banner" style="display: none; background: #ff4b4b; color: white; padding: 12px; border-radius: 8px; text-align: center; margin-bottom: 12px;">
@@ -166,12 +172,21 @@ def render_realtime_webcam_monitor(
     </div>
 
     <script>
+    const EMAILJS_PUBLIC_KEY  = "WUm7l9QykSmw-0EB5";
+    const EMAILJS_SERVICE_ID  = "service_n985uh6";
+    const EMAILJS_TEMPLATE_ID = "template_4vm9sei";
+
+    if (typeof emailjs !== "undefined") {{
+        emailjs.init({{ publicKey: EMAILJS_PUBLIC_KEY }});
+    }}
+
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('overlay');
     const ctx = canvas.getContext('2d');
     const statusBadge = document.getElementById('status-badge');
     const alarmBanner = document.getElementById('alarm-banner');
     const alarmDetails = document.getElementById('alarm-details');
+    const emailStatus = document.getElementById('email-status');
 
     const MODEL_ENDPOINT = "https://detect.roboflow.com/chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1?api_key=Rhe3HdHgQKYFx7aatoOx&confidence={int(conf_threshold * 100)}";
     let isRunning = true;
@@ -179,6 +194,30 @@ def render_realtime_webcam_monitor(
     let alarmMuted = false;
     let streamRef = null;
     let lastSpeakTime = 0;
+    let lastEmailTime = 0;
+
+    function sendLiveEmailAlert(violationCount) {{
+        const nowMs = Date.now();
+        if (nowMs - lastEmailTime < 60000) return; // 60-second cooldown
+        lastEmailTime = nowMs;
+
+        emailStatus.style.display = "block";
+        emailStatus.style.background = "#1565c0";
+        emailStatus.innerText = "✉️ Sending live violation email alert to obedkamwandi1@gmail.com...";
+
+        emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {{
+            zone_name: "{zone_name}",
+            violations: violationCount,
+            coordinates: "{lat:.6f}, {lon:.6f}",
+            maps_link: "{maps_link}"
+        }}).then(() => {{
+            emailStatus.style.background = "#2e7d32";
+            emailStatus.innerText = "✅ Email alert with GPS pin sent to obedkamwandi1@gmail.com!";
+        }}).catch((err) => {{
+            emailStatus.style.background = "#c62828";
+            emailStatus.innerText = "⚠️ EmailJS Error: " + JSON.stringify(err);
+        }});
+    }}
 
     async function startWebcam() {{
         try {{
@@ -306,6 +345,7 @@ def render_realtime_webcam_monitor(
                 alarmBanner.style.display = "block";
                 alarmDetails.innerText = `Detected ${{violations}} person(s) without a hard hat at {zone_name}!`;
                 triggerSiren();
+                sendLiveEmailAlert(violations);
             }} else if (total > 0) {{
                 alarmBanner.style.display = "none";
             }}
