@@ -14,6 +14,7 @@ import streamlit.components.v1 as components
 import qrcode
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 import av
+from streamlit_js_eval import get_geolocation
 
 # Ensure archive directory exists
 os.makedirs("archive", exist_ok=True)
@@ -101,6 +102,17 @@ def play_offline_siren():
     </script>
     """
   components.html(siren_js, height=130)
+
+
+def render_google_map(lat: float, lon: float, zone_label: str):
+  maps_link = f"https://www.google.com/maps?q={lat},{lon}"
+  embed_url = f"https://maps.google.com/maps?q={lat},{lon}&z=16&output=embed"
+  st.markdown(f"### 📍 Incident GPS Location — {zone_label}")
+  st.markdown(
+      f"**Coordinates:** `{lat:.6f}, {lon:.6f}` | 🔗 **[Open Exact Pin in"
+      f" Google Maps]({maps_link})**"
+  )
+  components.iframe(embed_url, height=350)
 
 
 # Class color mapping (RGB format)
@@ -209,6 +221,43 @@ app_mode = st.sidebar.radio(
 conf_threshold = st.sidebar.slider(
     "Confidence Threshold", min_value=0.1, max_value=1.0, value=0.4, step=0.05
 )
+
+# Sidebar Location & GPS Tracking
+st.sidebar.markdown("---")
+st.sidebar.header("📍 Site Location & GPS")
+location_source = st.sidebar.radio(
+    "Location Source",
+    ["Automatic Device GPS", "Fixed Site Zone"],
+)
+
+SITE_ZONES = {
+    "Main Site Gate (Lusaka HQ)": (-15.387500, 28.322800),
+    "Copperbelt Shaft 1 (Kitwe)": (-12.802400, 28.213200),
+    "Processing Plant (Chingola)": (-12.528900, 27.883800),
+    "Smelter Zone (Mufulira)": (-12.549800, 28.240700),
+}
+
+active_lat, active_lon = -15.387500, 28.322800
+active_zone_name = "Main Site Gate (Lusaka HQ)"
+
+if location_source == "Automatic Device GPS":
+  loc = get_geolocation()
+  if loc and "coords" in loc:
+    active_lat = float(loc["coords"]["latitude"])
+    active_lon = float(loc["coords"]["longitude"])
+    active_zone_name = "Live Device GPS"
+    st.sidebar.success(f"GPS Locked: {active_lat:.5f}, {active_lon:.5f}")
+  else:
+    st.sidebar.warning(
+        "Allow browser location permission for live GPS. Using fallback"
+        " coordinates."
+    )
+    active_zone_name = "Fallback Site Coordinates"
+else:
+  selected_zone = st.sidebar.selectbox("Select Camera Zone", list(SITE_ZONES.keys()))
+  active_lat, active_lon = SITE_ZONES[selected_zone]
+  active_zone_name = selected_zone
+  st.sidebar.info(f"Zone GPS: {active_lat:.5f}, {active_lon:.5f}")
 
 # Sidebar QR Code for Mobile Access
 st.sidebar.markdown("---")
@@ -320,6 +369,8 @@ if app_mode == "Image / Snapshot":
           "Class": cls_name,
           "Confidence": f"{pred['confidence'] * 100:.1f}%",
           "Bounding Box": f"[{x1}, {y1}, {x2}, {y2}]",
+          "Zone": active_zone_name,
+          "GPS": f"{active_lat:.5f}, {active_lon:.5f}",
       })
 
       label = f"{cls_name} ({pred['confidence']:.2f})"
@@ -345,7 +396,7 @@ if app_mode == "Image / Snapshot":
     if violations > 0:
       st.error(
           f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s) without"
-          " a hard hat!"
+          f" a hard hat at **{active_zone_name}**!"
       )
       play_offline_siren()
 
@@ -354,6 +405,8 @@ if app_mode == "Image / Snapshot":
           "archive", f"violation_{timestamp}_{violations}viol.png"
       )
       Image.fromarray(img_np).save(archive_path)
+
+      google_maps_link = f"https://www.google.com/maps?q={active_lat},{active_lon}"
 
       if (
           "last_alert_sent" not in st.session_state
@@ -367,9 +420,12 @@ if app_mode == "Image / Snapshot":
           msg = MIMEText(
               "🚨 AUTOMATED SITE SAFETY ALERT\n\nThe vision monitoring system"
               f" detected {violations} person(s) without required safety helmets"
-              f" on site.\n\nCaptured image archived as: {archive_path}"
+              f" on site.\n\nZone: {active_zone_name}\nGPS Coordinates:"
+              f" {active_lat:.6f}, {active_lon:.6f}\nGoogle Maps Pin:"
+              f" {google_maps_link}\n\nCaptured image archived as:"
+              f" {archive_path}"
           )
-          msg["Subject"] = "🚨 Urgent: Safety Violation Detected"
+          msg["Subject"] = f"🚨 Urgent: Safety Violation at {active_zone_name}"
           msg["From"] = sender
           msg["To"] = receiver
 
@@ -378,8 +434,8 @@ if app_mode == "Image / Snapshot":
             server.send_message(msg)
 
           st.success(
-              "✉️ **Automated Alert Sent & Archived:** Email dispatched and"
-              " capture saved to audit trail."
+              "✉️ **Automated Alert Sent & Archived:** Email with Google Maps"
+              " pin dispatched and capture saved to audit trail."
           )
           st.session_state["last_alert_sent"] = violations
         except Exception as e:
@@ -395,6 +451,10 @@ if app_mode == "Image / Snapshot":
       st.session_state["last_alert_sent"] = 0
 
     st.image(img_np, caption="Processed Image", use_container_width=True)
+
+    # Render Google Maps pin whenever a violation occurs
+    if violations > 0:
+      render_google_map(active_lat, active_lon, active_zone_name)
 
     st.markdown("### 📊 Safety Analytics Summary")
     total_detected = len(filtered_predictions)
@@ -443,6 +503,8 @@ elif app_mode == "Video File":
           api_url="https://detect.roboflow.com",
           api_key="Rhe3HdHgQKYFx7aatoOx",
       )
+
+      video_had_violation = False
 
       while cap.isOpened():
         ret, frame = cap.read()
@@ -525,6 +587,7 @@ elif app_mode == "Video File":
             )
 
           if frame_violations > 0:
+            video_had_violation = True
             play_offline_siren()
 
             current_time = cv2.getTickCount() / cv2.getTickFrequency()
@@ -548,14 +611,16 @@ elif app_mode == "Video File":
 
       cap.release()
       st.success("✅ Video processing complete! Check your archive sidebar.")
+      if video_had_violation:
+        render_google_map(active_lat, active_lon, active_zone_name)
   else:
     st.info("Please upload a video file above to begin video monitoring.")
 
 elif app_mode == "Live Webcam Feed":
   st.markdown("### 🔴 Live Webcam Real-Time Monitoring")
   st.info(
-      "Click **Start** below to activate your browser webcam. The model will"
-      " automatically scan live video frames for hard hat compliance."
+      f"Monitoring **{active_zone_name}** (`{active_lat:.5f}, {active_lon:.5f}`)."
+      " Click **Start** below to activate your browser webcam."
   )
 
   webrtc_streamer(
@@ -570,3 +635,5 @@ elif app_mode == "Live Webcam Feed":
           ]
       },
   )
+
+  render_google_map(active_lat, active_lon, active_zone_name)
