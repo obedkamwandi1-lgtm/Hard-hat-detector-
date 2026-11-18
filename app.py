@@ -1,4 +1,3 @@
-
 import io
 import os
 import tempfile
@@ -115,214 +114,6 @@ def render_google_map(lat: float, lon: float, zone_label: str):
     components.iframe(embed_url, height=350)
 
 
-def render_realtime_webcam_monitor(
-    conf_threshold: float, zone_name: str, lat: float, lon: float
-):
-    """Hands-free HTML5 real-time camera monitor with direct Roboflow inference & live alarm."""
-    html_code = f"""
-    <div style="font-family: sans-serif; color: #fafafa; background: #1e2129; padding: 16px; border-radius: 10px; border: 1px solid #31333f;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
-            <div>
-                <span id="status-badge" style="background: #2e7d32; color: white; padding: 5px 12px; border-radius: 20px; font-weight: bold; font-size: 13px;">
-                    🟢 LIVE CAMERA STARTING...
-                </span>
-                <span style="margin-left: 10px; font-size: 13px; color: #b0b3b8;">
-                    Zone: <b>{zone_name}</b> ({lat:.5f}, {lon:.5f})
-                </span>
-            </div>
-            <div>
-                <button id="toggle-btn" onclick="toggleCamera()" style="background: #ff4b4b; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer;">
-                    ⏹ Stop Monitoring
-                </button>
-            </div>
-        </div>
-
-        <div id="alarm-banner" style="display: none; background: #ff4b4b; color: white; padding: 12px; border-radius: 8px; text-align: center; margin-bottom: 12px;">
-            <h4 style="margin: 0 0 4px 0;">🚨 CONTINUOUS SAFETY VIOLATION DETECTED! 🚨</h4>
-            <p id="alarm-details" style="margin: 0 0 8px 0; font-size: 13px;">Worker detected without a hard hat!</p>
-            <button onclick="muteAlarm()" style="background: white; color: #ff4b4b; border: none; padding: 6px 16px; border-radius: 4px; font-weight: bold; cursor: pointer;">
-                🔇 Mute Siren
-            </button>
-        </div>
-
-        <div style="position: relative; width: 100%; max-width: 720px; margin: 0 auto; border-radius: 8px; overflow: hidden; background: #000;">
-            <video id="webcam" autoplay playsinline muted style="width: 100%; display: block;"></video>
-            <canvas id="overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
-        </div>
-
-        <div style="display: flex; justify-content: space-around; margin-top: 14px; background: #262730; padding: 10px; border-radius: 8px; text-align: center;">
-            <div>
-                <div style="font-size: 12px; color: #a3a8b8;">TOTAL DETECTED</div>
-                <div id="stat-total" style="font-size: 22px; font-weight: bold;">0</div>
-            </div>
-            <div>
-                <div style="font-size: 12px; color: #a3a8b8;">VIOLATIONS</div>
-                <div id="stat-viol" style="font-size: 22px; font-weight: bold; color: #ff4b4b;">0</div>
-            </div>
-            <div>
-                <div style="font-size: 12px; color: #a3a8b8;">COMPLIANCE</div>
-                <div id="stat-comp" style="font-size: 22px; font-weight: bold; color: #00e676;">100%</div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-    const video = document.getElementById('webcam');
-    const canvas = document.getElementById('overlay');
-    const ctx = canvas.getContext('2d');
-    const statusBadge = document.getElementById('status-badge');
-    const alarmBanner = document.getElementById('alarm-banner');
-    const alarmDetails = document.getElementById('alarm-details');
-
-    const MODEL_ENDPOINT = "https://detect.roboflow.com/chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1?api_key=Rhe3HdHgQKYFx7aatoOx&confidence={int(conf_threshold * 100)}";
-    let isRunning = true;
-    let isBusy = false;
-    let alarmMuted = false;
-    let streamRef = null;
-    let lastSpeakTime = 0;
-
-    async function startWebcam() {{
-        try {{
-            streamRef = await navigator.mediaDevices.getUserMedia({{
-                video: {{ facingMode: "environment", width: {{ ideal: 640 }}, height: {{ ideal: 480 }} }},
-                audio: false
-            }});
-            video.srcObject = streamRef;
-            statusBadge.innerText = "🟢 LIVE MONITORING ACTIVE";
-            statusBadge.style.background = "#2e7d32";
-            setInterval(processFrame, 1200);
-        }} catch (err) {{
-            statusBadge.innerText = "🔴 CAMERA ACCESS BLOCKED: " + err.message;
-            statusBadge.style.background = "#c62828";
-        }}
-    }}
-
-    function triggerSiren() {{
-        if (alarmMuted) return;
-        try {{
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            if (AudioCtx) {{
-                const audioCtx = new AudioCtx();
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.type = 'sawtooth';
-                const now = audioCtx.currentTime;
-                osc.frequency.setValueAtTime(880, now);
-                osc.frequency.setValueAtTime(440, now + 0.25);
-                gain.gain.setValueAtTime(0.35, now);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                osc.start(now);
-                osc.stop(now + 0.5);
-            }}
-        }} catch (e) {{}}
-
-        const nowMs = Date.now();
-        if ('speechSynthesis' in window && nowMs - lastSpeakTime > 4000) {{
-            lastSpeakTime = nowMs;
-            const u = new SpeechSynthesisUtterance("Warning! Hard hat violation detected at {zone_name}!");
-            u.rate = 1.1;
-            window.speechSynthesis.speak(u);
-        }}
-    }}
-
-    function muteAlarm() {{
-        alarmMuted = true;
-        alarmBanner.style.display = "none";
-        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    }}
-
-    function toggleCamera() {{
-        const btn = document.getElementById('toggle-btn');
-        if (isRunning) {{
-            isRunning = false;
-            if (streamRef) streamRef.getTracks().forEach(t => t.stop());
-            statusBadge.innerText = "⏸ MONITORING PAUSED";
-            statusBadge.style.background = "#616161";
-            btn.innerText = "▶️ Resume Monitoring";
-            btn.style.background = "#2e7d32";
-        }} else {{
-            isRunning = true;
-            alarmMuted = false;
-            btn.innerText = "⏹ Stop Monitoring";
-            btn.style.background = "#ff4b4b";
-            startWebcam();
-        }}
-    }}
-
-    async function processFrame() {{
-        if (!isRunning || isBusy || video.readyState < 2) return;
-        isBusy = true;
-
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-
-        const offscreen = document.createElement('canvas');
-        offscreen.width = video.videoWidth;
-        offscreen.height = video.videoHeight;
-        offscreen.getContext('2d').drawImage(video, 0, 0);
-        const base64Img = offscreen.toDataURL('image/jpeg', 0.7).split(',')[1];
-
-        try {{
-            const resp = await fetch(MODEL_ENDPOINT, {{
-                method: "POST",
-                headers: {{ "Content-Type": "application/x-www-form-urlencoded" }},
-                body: base64Img
-            }});
-            const data = await resp.json();
-            const preds = data.predictions || [];
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            let violations = 0;
-
-            preds.forEach(p => {{
-                const x1 = p.x - p.width / 2;
-                const y1 = p.y - p.height / 2;
-                const clsLower = p.class.toLowerCase();
-                const isViol = clsLower.includes("no") || clsLower.includes("not");
-                if (isViol) violations++;
-
-                const color = isViol ? "#ff1744" : "#00e676";
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 4;
-                ctx.strokeRect(x1, y1, p.width, p.height);
-
-                const label = `${{p.class}} (${{(p.confidence * 100).toFixed(0)}}%)`;
-                ctx.font = "bold 15px sans-serif";
-                const textW = ctx.measureText(label).width;
-                ctx.fillStyle = color;
-                ctx.fillRect(x1, Math.max(0, y1 - 24), textW + 10, 24);
-                ctx.fillStyle = "#000000";
-                ctx.fillText(label, x1 + 5, Math.max(17, y1 - 6));
-            }});
-
-            const total = preds.length;
-            const comp = total > 0 ? Math.round(((total - violations) / total) * 100) : 100;
-            document.getElementById('stat-total').innerText = total;
-            document.getElementById('stat-viol').innerText = violations;
-            document.getElementById('stat-comp').innerText = comp + "%";
-
-            if (violations > 0) {{
-                alarmBanner.style.display = "block";
-                alarmDetails.innerText = `Detected ${{violations}} person(s) without a hard hat at {zone_name}!`;
-                triggerSiren();
-            }} else if (total > 0) {{
-                alarmBanner.style.display = "none";
-            }}
-        }} catch (err) {{
-            console.error("Inference frame error:", err);
-        }} finally {{
-            isBusy = false;
-        }}
-    }}
-
-    startWebcam();
-    </script>
-    """
-    components.html(html_code, height=680)
-
-
 # Class color mapping (RGB format)
 CLASS_COLORS = {
     "WEARING HARD-HAT": (0, 255, 0),  # Green
@@ -343,6 +134,7 @@ def process_and_display_image(
     active_lon: float,
     active_zone_name: str,
     key_prefix: str = "img",
+    is_live_loop: bool = False,
 ):
     client = InferenceHTTPClient(
         api_url="https://detect.roboflow.com",
@@ -459,10 +251,19 @@ def process_and_display_image(
             f"https://www.google.com/maps?q={active_lat},{active_lon}"
         )
 
-        if (
-            "last_alert_sent" not in st.session_state
-            or st.session_state["last_alert_sent"] != violations
-        ):
+        # 60-second cooldown for live loop so inbox isn't spammed
+        now_sec = time.time()
+        last_sent_time = st.session_state.get("last_email_timestamp", 0)
+        can_send_email = (
+            (now_sec - last_sent_time > 60)
+            if is_live_loop
+            else (
+                "last_alert_sent" not in st.session_state
+                or st.session_state["last_alert_sent"] != violations
+            )
+        )
+
+        if can_send_email:
             try:
                 sender = st.secrets["email"]["sender"]
                 password = st.secrets["email"]["password"]
@@ -486,14 +287,20 @@ def process_and_display_image(
 
                 st.success(
                     "✉️ **Automated Alert Sent & Archived:** Email with Google Maps"
-                    " pin dispatched and capture saved to audit trail."
+                    " pin dispatched to obedkamwandi1@gmail.com and capture saved to audit trail."
                 )
                 st.session_state["last_alert_sent"] = violations
+                st.session_state["last_email_timestamp"] = now_sec
             except Exception as e:
                 st.error(
                     "Failed to send email alert. Check Streamlit Secrets. Error:"
                     f" {e}"
                 )
+        elif is_live_loop:
+            remaining = int(60 - (now_sec - last_sent_time))
+            st.info(
+                f"⏳ Email cooldown active ({remaining}s remaining before next email alert). Violation still archived."
+            )
 
     elif len(filtered_predictions) > 0:
         st.success(
@@ -767,8 +574,40 @@ elif app_mode == "Video File":
         st.info("Please upload a video file above to begin video monitoring.")
 
 elif app_mode == "Live Webcam Feed":
-    st.markdown("### 🔴 Real-Time Site Camera Monitor (Hands-Free Live Stream)")
-    render_realtime_webcam_monitor(
-        conf_threshold, active_zone_name, active_lat, active_lon
+    st.markdown("### 🔴 Live Webcam Real-Time Monitoring (Server-Side Python Loop)")
+    st.info(
+        f"Monitoring **{active_zone_name}** (`{active_lat:.5f},"
+        f" {active_lon:.5f}`) with server-side SMTP email alerts and audit archiving."
     )
-    render_google_map(active_lat, active_lon, active_zone_name)
+
+    col_cam, col_ctrl = st.columns([3, 1])
+    with col_ctrl:
+        auto_scan = st.toggle("🔄 Continuous Auto-Scan", value=True)
+        scan_interval = st.slider(
+            "Scan Interval (sec)", min_value=1.5, max_value=5.0, value=2.0, step=0.5
+        )
+        st.caption(
+            "Capture a live frame from your camera. Server-side Python will run inference, dispatch SMTP emails (with a 60s cooldown), and archive violations."
+        )
+
+    with col_cam:
+        live_cam_frame = st.camera_input(
+            "Live Site Camera Feed", key="live_python_cam"
+        )
+
+    if live_cam_frame is not None:
+        live_img = Image.open(live_cam_frame)
+        process_and_display_image(
+            live_img,
+            conf_threshold,
+            active_lat,
+            active_lon,
+            active_zone_name,
+            key_prefix="live",
+            is_live_loop=True,
+        )
+
+        if auto_scan:
+            st.toast(f"Next live scan in {scan_interval}s...", icon="📷")
+            time.sleep(scan_interval)
+            st.rerun()
