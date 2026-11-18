@@ -1,9 +1,10 @@
 streamlit
 opencv-python-headless
 numpy
+pandas
 pillow
 inference-sdk
-pandas
 qrcode
 streamlit-webrtc
 av
+streamlit-js-eval
