@@ -231,14 +231,15 @@ location_source = st.sidebar.radio(
 )
 
 SITE_ZONES = {
+    "Kansanshi Mine (Solwezi)": (-12.115800, 26.402500),
     "Main Site Gate (Lusaka HQ)": (-15.387500, 28.322800),
     "Copperbelt Shaft 1 (Kitwe)": (-12.802400, 28.213200),
     "Processing Plant (Chingola)": (-12.528900, 27.883800),
     "Smelter Zone (Mufulira)": (-12.549800, 28.240700),
 }
 
-active_lat, active_lon = -15.387500, 28.322800
-active_zone_name = "Main Site Gate (Lusaka HQ)"
+active_lat, active_lon = -12.115800, 26.402500
+active_zone_name = "Kansanshi Mine (Solwezi)"
 
 if location_source == "Automatic Device GPS":
   loc = get_geolocation()
@@ -249,12 +250,14 @@ if location_source == "Automatic Device GPS":
     st.sidebar.success(f"GPS Locked: {active_lat:.5f}, {active_lon:.5f}")
   else:
     st.sidebar.warning(
-        "Allow browser location permission for live GPS. Using fallback"
-        " coordinates."
+        "Allow browser location permission for live GPS. Using Kansanshi Mine"
+        " fallback coordinates."
     )
-    active_zone_name = "Fallback Site Coordinates"
+    active_zone_name = "Kansanshi Mine (Fallback)"
 else:
-  selected_zone = st.sidebar.selectbox("Select Camera Zone", list(SITE_ZONES.keys()))
+  selected_zone = st.sidebar.selectbox(
+      "Select Camera Zone", list(SITE_ZONES.keys())
+  )
   active_lat, active_lon = SITE_ZONES[selected_zone]
   active_zone_name = selected_zone
   st.sidebar.info(f"Zone GPS: {active_lat:.5f}, {active_lon:.5f}")
@@ -307,7 +310,7 @@ if app_mode == "Image / Snapshot":
       )
     except Exception as e:
       st.error(
-          f"Error connecting to Roboflow API. Please check your internet or API"
+          "Error connecting to Roboflow API. Please check your internet or API"
           f" key. Details: {e}"
       )
       st.stop()
@@ -395,8 +398,8 @@ if app_mode == "Image / Snapshot":
 
     if violations > 0:
       st.error(
-          f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s) without"
-          f" a hard hat at **{active_zone_name}**!"
+          f"🚨 **SAFETY VIOLATION ALERT:** Detected {violations} person(s)"
+          f" without a hard hat at **{active_zone_name}**!"
       )
       play_offline_siren()
 
@@ -406,7 +409,9 @@ if app_mode == "Image / Snapshot":
       )
       Image.fromarray(img_np).save(archive_path)
 
-      google_maps_link = f"https://www.google.com/maps?q={active_lat},{active_lon}"
+      google_maps_link = (
+          f"https://www.google.com/maps?q={active_lat},{active_lon}"
+      )
 
       if (
           "last_alert_sent" not in st.session_state
@@ -419,10 +424,10 @@ if app_mode == "Image / Snapshot":
 
           msg = MIMEText(
               "🚨 AUTOMATED SITE SAFETY ALERT\n\nThe vision monitoring system"
-              f" detected {violations} person(s) without required safety helmets"
-              f" on site.\n\nZone: {active_zone_name}\nGPS Coordinates:"
-              f" {active_lat:.6f}, {active_lon:.6f}\nGoogle Maps Pin:"
-              f" {google_maps_link}\n\nCaptured image archived as:"
+              f" detected {violations} person(s) without required safety"
+              f" helmets on site.\n\nZone: {active_zone_name}\nGPS"
+              f" Coordinates: {active_lat:.6f}, {active_lon:.6f}\nGoogle Maps"
+              f" Pin: {google_maps_link}\n\nCaptured image archived as:"
               f" {archive_path}"
           )
           msg["Subject"] = f"🚨 Urgent: Safety Violation at {active_zone_name}"
@@ -536,7 +541,9 @@ elif app_mode == "Video File":
           scores_for_nms = []
           for p in initial_predictions:
             x, y, w, h = p["x"], p["y"], p["width"], p["height"]
-            boxes_for_nms.append([int(x - w / 2), int(y - h / 2), int(w), int(h)])
+            boxes_for_nms.append(
+                [int(x - w / 2), int(y - h / 2), int(w), int(h)]
+            )
             scores_for_nms.append(float(p["confidence"]))
 
           indices = cv2.dnn.NMSBoxes(
@@ -567,7 +574,9 @@ elif app_mode == "Video File":
               frame_violations += 1
 
             label = f"{cls_name} ({pred['confidence']:.2f})"
-            cv2.rectangle(rgb_frame, (x1, y1), (x2, y2), box_color, box_thickness)
+            cv2.rectangle(
+                rgb_frame, (x1, y1), (x2, y2), box_color, box_thickness
+            )
             (text_w, text_h), baseline = cv2.getTextSize(
                 label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness
             )
@@ -619,8 +628,9 @@ elif app_mode == "Video File":
 elif app_mode == "Live Webcam Feed":
   st.markdown("### 🔴 Live Webcam Real-Time Monitoring")
   st.info(
-      f"Monitoring **{active_zone_name}** (`{active_lat:.5f}, {active_lon:.5f}`)."
-      " Click **Start** below to activate your browser webcam."
+      f"Monitoring **{active_zone_name}** (`{active_lat:.5f},"
+      f" {active_lon:.5f}`). Click **Start** below to activate your browser"
+      " webcam."
   )
 
   webrtc_streamer(
