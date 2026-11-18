@@ -1,3 +1,4 @@
+
 import io
 import os
 import tempfile
@@ -114,7 +115,9 @@ def render_google_map(lat: float, lon: float, zone_label: str):
     components.iframe(embed_url, height=350)
 
 
-def render_realtime_webcam_monitor(conf_threshold: float, zone_name: str, lat: float, lon: float):
+def render_realtime_webcam_monitor(
+    conf_threshold: float, zone_name: str, lat: float, lon: float
+):
     """Hands-free HTML5 real-time camera monitor with direct Roboflow inference & live alarm."""
     html_code = f"""
     <div style="font-family: sans-serif; color: #fafafa; background: #1e2129; padding: 16px; border-radius: 10px; border: 1px solid #31333f;">
