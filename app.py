@@ -173,7 +173,7 @@ def render_realtime_webcam_monitor(
 
     <script>
     const EMAILJS_PUBLIC_KEY  = "Vg6wacE9waV1xNaze";
-    const EMAILJS_SERVICE_ID  = "service_1oks2q8";
+    const EMAILJS_SERVICE_ID  = "service_8zutjvm";
     const EMAILJS_TEMPLATE_ID = "template_3lqcsuo";
 
     if (typeof emailjs !== "undefined") {{
