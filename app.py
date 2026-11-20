@@ -181,7 +181,7 @@ def render_realtime_webcam_monitor(conf_threshold: float, zone_name: str, lat: f
         const alarmBanner = document.getElementById('alarm-banner');
         const alarmDetails = document.getElementById('alarm-details');
         const emailStatus = document.getElementById('email-status');
-        const MODEL_ENDPOINT = "https://detect.roboflow.com/chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1?api_key=Rhe3HdHgQKYFx7aatoOx&confidence={int(conf_threshold * 100)}";
+        const MODEL_ENDPOINT = "https://detect.roboflow.com/chinyama-chilila/hard-hat-detector-l0uba-9-rfdetr-small-t1?api_key=aNWINVZdUgX95SHANnnt&confidence={int(conf_threshold * 100)}";
         let currentFacingMode = "environment";
         let isRunning = true;
         let isBusy = false;
